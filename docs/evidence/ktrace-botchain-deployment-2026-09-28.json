@@ -1,0 +1,125 @@
+{
+  "status": "DEPLOYED_CONFIGURED_UNFUNDED",
+  "checkedAt": "2026-09-28T04:54:36.810Z",
+  "chainId": 677,
+  "owner": "0x28172e0d973fFf24651B6Ed4cA6d1007bc168C94",
+  "token": "0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C",
+  "digest": "0xb827d2ad31062b702d0a9dfa447e43fd3e40f55aa45693733db572419d32cae5",
+  "sourceHashes": {
+    "IdentityRegistryV1.sol": "4bc2cb1411eb861bdfa24add9bd0449def0c251cc007097094ef43806d50fb7e",
+    "TrustPublicationAnchorV1.sol": "495f0f875cc1269ae0510bd58169f448b3941513197e34e1e29f3440a3b65e43",
+    "JobLifecycleAnchorV2.sol": "ff404b32e4edb2a31355ba82e22280dd142cf495d64fe6d561d956a41499a722",
+    "TraceAnchorGuard.sol": "0dd57d89bd8fe2868c21d9ec39a769569bd1502cc6ba7596032a48614faebb98",
+    "JobEscrowV4.sol": "8feed7dd47fa71601201e0a1d1473c4cbf7b04d6585687f8f2ab6d8e6d9d4355",
+    "ITraceAnchorGuard.sol": "4fb547de983e478a563e3f06044eaa17c662deae453125a2580e49984ba6a694"
+  },
+  "compiler": "0.8.30+commit.73712a01.Emscripten.clang",
+  "transactions": [
+    {
+      "name": "IdentityRegistryV1",
+      "address": "0xA0A902E556795E2b1B0424525e2F7535388A407F",
+      "nonce": 1,
+      "hash": "0x21469938b42c30d84ffa523b6c20ae99840ea2b60f668606d8804b813a87ce2c",
+      "blockNumber": "24782446",
+      "blockHash": "0x5034c59c9ae5f6d9c0c5a912b020d8c5a45aee3d517aa7f508edc0a7b65c8f69",
+      "gasUsed": "1780176",
+      "gasPrice": "22000000000",
+      "feeWei": "39163872000000000",
+      "runtimeHash": "0xcd874ef0eaa0b9590436d102289eeb18b02e12c14f04bf24d97c76c2e3956e32"
+    },
+    {
+      "name": "TrustPublicationAnchorV1",
+      "address": "0xdAC1840050f2EBfC9b92c2Cc9080d2E623E46622",
+      "nonce": 2,
+      "hash": "0xa8f8b495dc045a97bf43605909fd4f6f41f3128c1c8c6f73b2dc24311d7646e4",
+      "blockNumber": "24782453",
+      "blockHash": "0xd0cfde1e1a2572cddfe2a3d32f3a78a882c525bb3a0a5dfd28a305279bd6284d",
+      "gasUsed": "996244",
+      "gasPrice": "22000000000",
+      "feeWei": "21917368000000000",
+      "runtimeHash": "0x0abe036e2f0809d06572639bf7877b52c45de6bb42900ede7c3451ba0b760c81"
+    },
+    {
+      "name": "JobLifecycleAnchorV2",
+      "address": "0x64Dae9cC4063Caf71A132E3372E09807064585aB",
+      "nonce": 3,
+      "hash": "0x1ed6b9a3e38cc2a025cb0bc70199133773970ca662c4910fccb2598938ef0619",
+      "blockNumber": "24782461",
+      "blockHash": "0x851a158432c89fb46cb900f02c99c8c753a7269e0663307254b8c3b2b39220af",
+      "gasUsed": "1393620",
+      "gasPrice": "22000000000",
+      "feeWei": "30659640000000000",
+      "runtimeHash": "0x4cbae5a79cceebc4456503f1305621d1351e5db819f9f5c630e573478c40c288"
+    },
+    {
+      "name": "TraceAnchorGuard",
+      "address": "0xD1ae614A07f30d115004146F7FAf8C838A4B3fB4",
+      "nonce": 4,
+      "hash": "0xf4d0de002a9d9187725240c2e2fe62118bafd7c93666720853da67969042ae31",
+      "blockNumber": "24782468",
+      "blockHash": "0x0eba9964a0a13b6f1147c7551ad01b7cd86cbeb5ac10ed8696da58abfe93aec8",
+      "gasUsed": "174801",
+      "gasPrice": "22000000000",
+      "feeWei": "3845622000000000",
+      "runtimeHash": "0xe46652ea94cc5a464ffbb4cb9cdaf82dc6b40378c73bae04278687001dbb36a4"
+    },
+    {
+      "name": "JobEscrowV4",
+      "address": "0x885164d7b9591016EcD0aAD8b06A6E9191752B88",
+      "nonce": 5,
+      "hash": "0x400bb86ce9b7907d490545d2c2acc034ca084024db80b620a53f34196e8c06eb",
+      "blockNumber": "24782476",
+      "blockHash": "0xe16f5b2363043b899cc62b2591119c34034a06d9058834880e67e35d7b4a3ccd",
+      "gasUsed": "1408103",
+      "gasPrice": "22000000000",
+      "feeWei": "30978266000000000",
+      "runtimeHash": "0x790d25d0642ce551b894378d806be0a41bc34ea38358d6dd58ebce1e7be6cf7c"
+    },
+    {
+      "name": "SetTraceAnchorGuard",
+      "address": "0x885164d7b9591016EcD0aAD8b06A6E9191752B88",
+      "nonce": 6,
+      "hash": "0x1c9744ac5ec67480252f3eb803a03220cbd7ed83146965f77ce5cfe1ab692843",
+      "blockNumber": "24782482",
+      "blockHash": "0x80552e258cb5eb295aea879efd456ac1b98d4d7510e8bbd2b0cd86ed2e675f88",
+      "gasUsed": "47494",
+      "gasPrice": "22000000000",
+      "feeWei": "1044868000000000"
+    }
+  ],
+  "totalFeeWei": "127609636000000000",
+  "ownerBalanceWei": "2857510466000000000",
+  "escrowTokenBalance": "0",
+  "finalized": true,
+  "finalizedBlock": "24782487",
+  "hasPauseSwitch": false,
+  "backendActivated": false,
+  "compilerSettings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true,
+    "evmVersion": "shanghai",
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode.object",
+          "evm.deployedBytecode.object",
+          "evm.deployedBytecode.immutableReferences"
+        ]
+      }
+    }
+  },
+  "tokenCodeHash": "0x0b70fe4156600e95ec26f02f62ac74c98a9d57758300ebdbdd8ce4477c5d8048",
+  "sourceRepository": "https://github.com/enderzcx/kite-trace-platform",
+  "sourceCommit": "410bc41b0f00c7acf7805e5b8ff73e12910dce35",
+  "tests": {
+    "typecheck": "passed",
+    "passed": 138,
+    "failed": 0,
+    "localScenario": "guarded task payment, permission/replay rejection, exact deployment graph and runtime"
+  },
+  "explorerSourceVerification": false
+}

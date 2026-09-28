@@ -1,0 +1,23 @@
+{
+  "job_id": "20260928-124033-review-910209c1",
+  "session_id": "8ed2f221-6d75-4ed8-a483-da0677f9cb1b",
+  "review": {
+    "verdict": "approve",
+    "summary": "No deployment blocker in this packet. The six Solidity files are byte-identical to kite-trace-platform/backend/contracts. Local compile is solc 0.8.30+commit.73712a01, OZ 5.4.0, optimizer 200, viaIR, Shanghai. tests/ktrace-deployment.test.ts passed: CREATE addresses nonce 1–5, runtime match including immutables, owners, 0 fees, IdentityRegistry→TrustPublication, owner-only JobLifecycleAnchor, JobEscrow token/guard, lock→accept→anchor→submit→pay, replay reject, and setTraceAnchorGuard refused after first set. Predicted addresses: IdentityRegistryV1 0xA0A902E556795E2b1B0424525e2F7535388A407F, TrustPublicationAnchorV1 0xdAC1840050f2EBfC9b92c2Cc9080d2E623E46622, JobLifecycleAnchorV2 0x64Dae9cC4063Caf71A132E3372E09807064585aB, TraceAnchorGuard 0xD1ae614A07f30d115004146F7FAf8C838A4B3fB4, JobEscrowV4 0x885164d7b9591016EcD0aAD8b6E9191752B88. Local buffered CREATE+setter gas ~7,003,531 (setter used 47,494 vs plan 100,000). Constructors only store predicted addresses; TraceAnchorGuard/JobEscrow immutables are registry/token; guard is nonce 6. Journal signs then fsyncs signed-{n}.json, recovery rebroadcasts the same raw tx, and cap is signed gasLimit×gasPrice across all six. tsc --noEmit passed. Live nonce/gas/USDT code were not queried. Production paths stay public after deploy (no pause, 0-fee register, permissionless lockFunds); that is accepted leftover, not a send gate.",
+    "findings": [],
+    "next_steps": [
+      "No deployment blocker. Host may prepare/send only if live nonce latest=pending=1, token code/decimals=6, empty CREATE targets, and prepare cost≤0.3 BOT.",
+      "Treat prepare “Gas cap exceeded” as the live gate. Local buffered gas is ~7.00e6; at that limit the 0.3 BOT cap allows about 43 gwei. This review did not read mainnet gas or nonce.",
+      "Send only with KTRACE_APPROVED_DIGEST equal to the prepare digest and the owner key in-process. Do not send extra txs from 0x28172e0d973fFf24651B6Ed4cA6d1007bc168C94. On uncertainty, rerun send/verify against the same signed-{1..6}.json; do not replace nonce.",
+      "After receipts: runtime, owner, registerFee=0, metadataUpdateFee=0, identityRegistry, guard.registry, escrow.traceAnchorGuard, escrow.settlementToken, escrow USDT balance 0. Do not fund USDT, register agents, create jobs, or enable backend/AA.",
+      "Residual production exposure (not a send gate): no pause; anyone can register and lockFunds after confirm; JobEscrow is unguarded until nonce 6; submit then needs an owner-published anchor; expire refunds requester and can slash executor stake."
+    ]
+  },
+  "hostValidation": {
+    "fullTests": "138 pass, 0 fail",
+    "typecheck": "passed",
+    "sourceCopies": "six exact matches to original commit 410bc41b0f00c7acf7805e5b8ff73e12910dce35",
+    "prepareDigest": "0xb827d2ad31062b702d0a9dfa447e43fd3e40f55aa45693733db572419d32cae5",
+    "note": "Reviewer summary has a transcription typo in JobEscrowV4 address. Canonical address is derived by deploymentSteps and tested: 0x885164d7b9591016EcD0aAD8b06A6E9191752B88; review prose is not a deployment input."
+  }
+}
