@@ -24,7 +24,7 @@ export function compile() {
         settings: {
           optimizer: { enabled: true, runs: 200 },
           evmVersion: "shanghai",
-          outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+          outputSelection: { "*": { "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object", "evm.deployedBytecode.immutableReferences"] } },
         },
       }),
       {
@@ -57,11 +57,13 @@ export function compile() {
       name,
       {
         abi: output.contracts[`${name}.sol`][name].abi,
+        deployedBytecode: `0x${output.contracts[`${name}.sol`][name].evm.deployedBytecode.object}` as `0x${string}`,
+        immutableReferences: output.contracts[`${name}.sol`][name].evm.deployedBytecode.immutableReferences as Record<string, {start:number;length:number}[]>,
         bytecode:
           `0x${output.contracts[`${name}.sol`][name].evm.bytecode.object}` as `0x${string}`,
       },
     ]),
-  ) as Record<(typeof CONTRACTS)[number], { abi: any; bytecode: `0x${string}` }>;
+  ) as Record<(typeof CONTRACTS)[number], { abi: any; bytecode: `0x${string}`; deployedBytecode: `0x${string}`; immutableReferences: Record<string, {start:number;length:number}[]> }>;
 }
 if (
   process.argv[1] &&
@@ -74,6 +76,6 @@ if (
       JSON.stringify(artifact, null, 2),
     );
   console.log(
-    "Compiled Settlement, TestUSDC, and CommissionEscrow (test networks only).",
+    "Compiled Settlement, TestUSDC, and CommissionEscrow (Settlement supports BOT Chain; other contracts remain test-only).",
   );
 }

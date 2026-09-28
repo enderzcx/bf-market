@@ -1,0 +1,20 @@
+{
+  "result": "PASS",
+  "kind": "LOCAL_FORK_NOT_MAINNET_PAYMENT",
+  "checkedAt": "2026-09-28T04:01:38.781Z",
+  "forkBlock": "24778241",
+  "chainId": 677,
+  "token": "0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C",
+  "tokenCodeHash": "0x0b70fe4156600e95ec26f02f62ac74c98a9d57758300ebdbdd8ce4477c5d8048",
+  "stateInjection": "40 USDT injected in local fork balance mapping only",
+  "balanceSlot": 0,
+  "checks": [
+    "mainnet USDT code SafeERC20 transfer",
+    "paused by default",
+    "local 20 USDT transfer",
+    "duplicate denied",
+    "insufficient balance does not consume ID",
+    "pause"
+  ],
+  "realMainnetWrites": 0
+}

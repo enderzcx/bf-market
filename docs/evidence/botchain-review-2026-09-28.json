@@ -1,0 +1,60 @@
+{
+  "reviewer": "Grok read-only via grok-companion",
+  "jobId": "20260928-115612-review-52e06d8b",
+  "review": {
+    "verdict": "needs-attention",
+    "summary": "Settlement is safe for the authorized paused, zero-USDT BOT Chain 677 create: chain/token allowlists, 6-decimal check, SafeERC20, payout-id replay guard, and constructor pause on 677/968 all hold, while 31337/43113 stay unpaused and src/chain.ts plus config.ts still reject BOT runtime. Compile immutable patching matches ganache-deployed runtime (one immutable id, three 32-byte slots). The send path still has two nonce-0 operational defects: spot gasPrice is frozen into a non-replaceable journaled legacy tx, and the CLI catch hides the failure that tells an operator whether to retry send or stop.",
+    "findings": [
+      {
+        "severity": "medium",
+        "title": "Nonce-0 gasPrice is spot-quoted and cannot be replaced after the journal",
+        "body": "prepare stores `getGasPrice()` with only a 20% gas-limit buffer, then send signs that exact `gas`/`gasPrice` into a write-ahead legacy creation tx and forbids a second nonce-0 signature. eth_call/estimateGas do not prove mempool inclusion. If base fee rises after prepare, the pinned tx can sit unmined while nonce 0 and address `getContractAddress(OWNER, 0)` stay reserved; bumping fees would require a different signed payload, which this script correctly refuses. The 0.02 BOT cap is an upper bound, not the bid, so unused headroom is left on the table. This is not a contract-funds bug (deploy is unfunded), but it can stall the only authorized creation.",
+        "file": "scripts/deploy-botchain.ts",
+        "line_start": 60,
+        "line_end": 93,
+        "confidence": 0.86,
+        "recommendation": "Before the first `signTransaction`, re-quote `getGasPrice()` and set `gasPrice` to the min of a buffered quote and `MAX_FEE / gas`, then persist that price in the plan and the journaled tx. If a journal already exists, do not sign a replacement; only rebroadcast the stored raw tx."
+      },
+      {
+        "severity": "medium",
+        "title": "CLI catch discards the error that distinguishes journal poison from a precondition miss",
+        "body": "`main(...).catch(() => { console.error('Deployment stopped: ... Preserve .local/botchain-deploy; never create a new nonce.'); })` swallows the assertion. Operators then cannot see `Broadcast uncertain; preserve journal`, `Owner nonce changed`, `Wrong signer`, or a post-sign parse failure. The generic line is directionally right, but a nonce-0 one-shot deploy fails closed in several different ways; hiding which one happened is how people delete `signed.json` and try to re-sign. Node/Bun will not print the assertion once it is caught.",
+        "file": "scripts/deploy-botchain.ts",
+        "line_start": 133,
+        "line_end": 135,
+        "confidence": 0.93,
+        "recommendation": "Log the caught `error` (message plus stack) and then print the preserve-journal line. Do not change the fail-closed control flow."
+      }
+    ],
+    "next_steps": [
+      "Fix the two send-path issues before `send`; if a journal already exists, only rebroadcast that raw tx and do not rotate nonce 0.",
+      "Keep `.local/botchain-deploy` on disk; treat `Broadcast uncertain` as do-not-re-sign until `eth_getTransaction` for the journal hash is conclusive.",
+      "Optional: add local tests for prepare/send/verify (approved-hash gate, write-ahead journal, nonce/pending checks) without hitting live RPC or loading a private key.",
+      "After inclusion, confirm paused==true, USDT balance 0, runtime hash, admin/executor roles; do not fund, unpause, or enable backend payouts."
+    ]
+  },
+  "resolution": {
+    "gasQuote": "Refresh before first signature, buffer 10 percent, cap total at 0.02 BOT; never replace an existing signed journal.",
+    "diagnostics": "Report failure stage and explicit assertion reason; suppress raw RPC bodies and credentials.",
+    "validation": "137 tests pass, typecheck pass; contract bytecode unchanged after review.",
+    "hostVerdict": "Resolved for paused unfunded deployment only; not a general production audit."
+  },
+  "reviewedSourceSha256": {
+    "contracts/Settlement.sol": "2e5fb5b403d6099c7cd0a7b23aed234d24a02b3de915d31e9d1e19c0bd9b924e",
+    "scripts/compile.ts": "c8951d5dbd937b6832742e59f40000f8a844fd647fd70e6283f0b366f10c5ee4",
+    "scripts/deploy-botchain.ts": "98900c439e7df71286d147aa960be0dcf2526785c3abeb6a5bd2f81a0fcaf5fc",
+    "scripts/verify-botchain-fork.ts": "68a6a455fdbf45ed330319c0bd366418868d28a9038082a19d1c72c5f1d32ca5",
+    "tests/botchain-contract.test.ts": "87eaa43db22cff71a255dcb60409ea45889b1c8880345f377451fdb8c92a7883",
+    "package.json": "2c4b5590790f17a53139f8dc01f5559eccfe1c09327eb895825722c972cdb53b",
+    "bun.lock": "b6221005bf864643c0242fa1880072c5b2cdb0eb4deaeeeb30b94236d3f7c881"
+  },
+  "releaseSourceSha256": {
+    "contracts/Settlement.sol": "2e5fb5b403d6099c7cd0a7b23aed234d24a02b3de915d31e9d1e19c0bd9b924e",
+    "scripts/compile.ts": "c8951d5dbd937b6832742e59f40000f8a844fd647fd70e6283f0b366f10c5ee4",
+    "scripts/deploy-botchain.ts": "48d49aeca17f56131668e7d581472f7cdffc37f0ff1852b0132ae878ecd90463",
+    "scripts/verify-botchain-fork.ts": "68a6a455fdbf45ed330319c0bd366418868d28a9038082a19d1c72c5f1d32ca5",
+    "tests/botchain-contract.test.ts": "46c0394f56d205f7b2476f56d180cb0cb0d17f35c87b0f53da7ed23c15b42b37",
+    "package.json": "2c4b5590790f17a53139f8dc01f5559eccfe1c09327eb895825722c972cdb53b",
+    "bun.lock": "b6221005bf864643c0242fa1880072c5b2cdb0eb4deaeeeb30b94236d3f7c881"
+  }
+}
