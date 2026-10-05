@@ -167,7 +167,7 @@ export function parseDiscoveryFilter(searchParams: URLSearchParams): DiscoveryFi
     if (value == null || value === '') continue;
     const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed < 0) {
-      throw new ServiceError(400, '分页参数无效。');
+      throw new ServiceError(400, 'Invalid pagination parameter.');
     }
     filter[key] = parsed;
   }
@@ -269,10 +269,10 @@ export function createServiceDiscovery(opts: {
   return {
     list(origin: string, filter: DiscoveryFilter): DiscoveryList {
       if (filter.type && filter.type !== 'http' && filter.type !== 'mcp') {
-        throw new ServiceError(400, '资源类型无效。');
+        throw new ServiceError(400, 'Invalid resource type.');
       }
       if (filter.payTo && !isValidPayTo(filter.payTo)) {
-        throw new ServiceError(400, '收款地址无效。');
+        throw new ServiceError(400, 'Invalid payout address.');
       }
       const items = applyFilter(all(origin), filter);
       const { page, total, limit, offset } = paginate(items, filter);

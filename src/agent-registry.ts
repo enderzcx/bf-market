@@ -91,11 +91,11 @@ function allowedUrl(value: string, allowInsecureLocal: boolean): boolean {
 
 function requiredString(value: unknown, label: string, max: number): string {
   if (typeof value !== 'string') {
-    throw new ServiceError(400, `${label}必须是文本。`);
+    throw new ServiceError(400, `${label} must be text.`);
   }
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > max) {
-    throw new ServiceError(400, `${label}长度必须在 1 到 ${max} 之间。`);
+    throw new ServiceError(400, `${label} must be between 1 and ${max} characters.`);
   }
   return trimmed;
 }
@@ -103,11 +103,11 @@ function requiredString(value: unknown, label: string, max: number): string {
 function optionalString(value: unknown, label: string, max: number): string | undefined {
   if (value == null || value === '') return undefined;
   if (typeof value !== 'string') {
-    throw new ServiceError(400, `${label}必须是文本。`);
+    throw new ServiceError(400, `${label} must be text.`);
   }
   const trimmed = value.trim();
   if (trimmed.length > max) {
-    throw new ServiceError(400, `${label}长度不能超过 ${max}。`);
+    throw new ServiceError(400, `${label} must be at most ${max} characters.`);
   }
   return trimmed.length ? trimmed : undefined;
 }
@@ -117,40 +117,40 @@ export function validateAgentProfile(
   opts?: { allowInsecureLocal?: boolean },
 ): AgentProfile {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new ServiceError(400, '代理档案无效。');
+    throw new ServiceError(400, 'Invalid agent profile.');
   }
   const raw = input as Record<string, unknown>;
   const allowInsecureLocal = opts?.allowInsecureLocal === true;
-  const name = requiredString(raw.name, '代理名称', AGENT_NAME_MAX);
+  const name = requiredString(raw.name, 'Agent name', AGENT_NAME_MAX);
   const description = optionalString(
     raw.description,
-    '代理描述',
+    'Agent description',
     AGENT_DESCRIPTION_MAX,
   );
-  const image = optionalString(raw.image, '代理图标', AGENT_IMAGE_MAX);
+  const image = optionalString(raw.image, 'Agent image', AGENT_IMAGE_MAX);
   if (image && !allowedUrl(image, allowInsecureLocal)) {
-    throw new ServiceError(400, '代理图标必须是 HTTPS 地址。');
+    throw new ServiceError(400, 'Agent image must be an HTTPS URL.');
   }
   const rawServices = raw.services;
   if (!Array.isArray(rawServices) || rawServices.length === 0) {
-    throw new ServiceError(400, '代理服务列表不能为空。');
+    throw new ServiceError(400, 'The agent services list must not be empty.');
   }
   if (rawServices.length > AGENT_SERVICES_MAX) {
-    throw new ServiceError(400, `代理服务最多 ${AGENT_SERVICES_MAX} 个。`);
+    throw new ServiceError(400, `At most ${AGENT_SERVICES_MAX} agent services are allowed.`);
   }
   const services: AgentProfileService[] = rawServices.map((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      throw new ServiceError(400, '代理服务条目无效。');
+      throw new ServiceError(400, 'Invalid agent service entry.');
     }
     const service = item as Record<string, unknown>;
     const serviceName = requiredString(
       service.name,
-      '服务名称',
+      'Service name',
       AGENT_SERVICE_NAME_MAX,
     );
-    const endpoint = requiredString(service.endpoint, '服务地址', AGENT_IMAGE_MAX);
+    const endpoint = requiredString(service.endpoint, 'Service endpoint', AGENT_IMAGE_MAX);
     if (!allowedUrl(endpoint, allowInsecureLocal)) {
-      throw new ServiceError(400, '服务地址必须是 HTTPS 地址。');
+      throw new ServiceError(400, 'Service endpoint must be an HTTPS URL.');
     }
     return { name: serviceName, endpoint };
   });
@@ -159,13 +159,13 @@ export function validateAgentProfile(
   if (image) profile.image = image;
   if (raw.x402Support != null) {
     if (typeof raw.x402Support !== 'boolean') {
-      throw new ServiceError(400, 'x402Support 必须是布尔值。');
+      throw new ServiceError(400, 'x402Support must be a boolean.');
     }
     profile.x402Support = raw.x402Support;
   }
   if (raw.active != null) {
     if (typeof raw.active !== 'boolean') {
-      throw new ServiceError(400, 'active 必须是布尔值。');
+      throw new ServiceError(400, 'active must be a boolean.');
     }
     profile.active = raw.active;
   }

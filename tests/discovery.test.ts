@@ -73,7 +73,7 @@ test('discovery lists available services in the Bazaar format with matching paym
   expect(item.resource).toBe(`${app.origin}/api/services/echo/call`);
   expect(item.type).toBe('http');
   expect(item.x402Version).toBe(2);
-  expect(item.description.length).toBeGreaterThan(0);
+  expect(item.description).toBe('Echo test service: returns the request body unchanged.');
   expect(item.mimeType).toBe('application/json');
   expect(Number.isNaN(Date.parse(item.lastUpdated))).toBe(false);
 

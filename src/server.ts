@@ -513,7 +513,10 @@ export function createApp(opts: {
 
   const requireRegistry = () => {
     if (!registryChain || !identityRegistry) {
-      throw new ServiceError(503, "该网络未配置身份注册表，注册功能不可用。");
+      throw new ServiceError(
+        503,
+        "No identity registry is configured on this network, so registration is unavailable.",
+      );
     }
     return { chain: registryChain, registry: identityRegistry };
   };
@@ -538,7 +541,7 @@ export function createApp(opts: {
   const parseChallengePurpose = (value: unknown): AgentChallengePurpose => {
     if (value == null || value === "") return "agent-draft";
     if (typeof value !== "string" || !AGENT_CHALLENGE_PURPOSES.has(value as AgentChallengePurpose)) {
-      throw new ServiceError(400, "验证用途无效。");
+      throw new ServiceError(400, "Invalid challenge purpose.");
     }
     return value as AgentChallengePurpose;
   };
@@ -548,13 +551,13 @@ export function createApp(opts: {
     value === "pending" || value === "approved" || value === "rejected";
   const parseAgentRole = (value: unknown): AgentRole => {
     if (typeof value !== "string" || !isAgentRole(value)) {
-      throw new ServiceError(400, "代理角色无效。");
+      throw new ServiceError(400, "Invalid agent role.");
     }
     return value;
   };
   const parseTxHash = (value: unknown): Hex => {
     if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
-      throw new ServiceError(400, "交易哈希无效。");
+      throw new ServiceError(400, "Invalid transaction hash.");
     }
     return value.toLowerCase() as Hex;
   };
@@ -592,19 +595,19 @@ export function createApp(opts: {
   ): Promise<string> => {
     const key = challengeKey(purpose, address);
     const challenge = opts.store.getChallenge(key);
-    if (!challenge) throw new ServiceError(400, "请先获取验证信息。");
+    if (!challenge) throw new ServiceError(400, "Request a challenge first.");
     if (challenge.consumed) {
-      throw new ServiceError(409, "验证信息已使用，请重新发起。");
+      throw new ServiceError(409, "This challenge was already used. Request a new one.");
     }
     if (now() > challenge.expiresAt) {
-      throw new ServiceError(400, "验证信息已过期，请重新发起。");
+      throw new ServiceError(400, "This challenge has expired. Request a new one.");
     }
     if (challenge.address.toLowerCase() !== address.toLowerCase()) {
-      throw new ServiceError(400, "钱包地址与验证信息不一致。");
+      throw new ServiceError(400, "The wallet address does not match the challenge.");
     }
     const recovered = await recoverBoundAddress(challenge.message, signature);
     if (recovered.toLowerCase() !== address.toLowerCase()) {
-      throw new ServiceError(400, "签名无效。");
+      throw new ServiceError(400, "Invalid signature.");
     }
     return key;
   };
@@ -623,7 +626,7 @@ export function createApp(opts: {
     ) {
       throw new ServiceError(
         429,
-        `未完成的注册草稿最多 ${MAX_AGENT_DRAFTS_PER_ADDRESS} 个。`,
+        `At most ${MAX_AGENT_DRAFTS_PER_ADDRESS} open registration drafts are allowed.`,
       );
     }
     opts.store.consumeChallenge(key);
@@ -654,27 +657,27 @@ export function createApp(opts: {
     const receipt = await chain.getFinalizedReceipt(txHash);
     if (!receipt) return { status: "pending" as const };
     if (receipt.status !== "success") {
-      throw new ServiceError(400, "注册交易未成功。");
+      throw new ServiceError(400, "The registration transaction did not succeed.");
     }
     if (!receipt.to || receipt.to.toLowerCase() !== registry.toLowerCase()) {
-      throw new ServiceError(400, "该交易不是身份注册表交易。");
+      throw new ServiceError(400, "This transaction is not to the identity registry.");
     }
     const event = decodeRegisteredEvent(receipt, registry);
-    if (!event) throw new ServiceError(400, "未找到注册事件。");
+    if (!event) throw new ServiceError(400, "No registration event found.");
     const draftId = parseDraftIdFromUri(event.agentURI, agentOriginOf(host));
-    if (!draftId) throw new ServiceError(400, "注册 URI 与平台不符。");
+    if (!draftId) throw new ServiceError(400, "The registration URI does not belong to this platform.");
     const draft = opts.store.getAgentDraft(draftId);
-    if (!draft) throw new ServiceError(400, "注册 URI 与任何草稿不匹配。");
+    if (!draft) throw new ServiceError(400, "The registration URI does not match any draft.");
     if (draft.address.toLowerCase() !== event.owner.toLowerCase()) {
-      throw new ServiceError(400, "注册事件的所有者与草稿地址不符。");
+      throw new ServiceError(400, "The registration event owner does not match the draft address.");
     }
     const ownerOf = await chain.readOwnerOf(event.agentId);
     if (ownerOf.toLowerCase() !== event.owner.toLowerCase()) {
-      throw new ServiceError(400, "链上所有者与注册事件不符。");
+      throw new ServiceError(400, "The on-chain owner does not match the registration event.");
     }
     const agentWallet = await chain.readAgentWallet(event.agentId);
     if (draft.role === "provider" && /^0x0{40}$/i.test(agentWallet)) {
-      throw new ServiceError(400, "服务方必须设置收款地址。");
+      throw new ServiceError(400, "A provider must set a payout address.");
     }
     const record = opts.store.upsertAgent({
       chainId: opts.config.chain.chainId,
@@ -694,7 +697,7 @@ export function createApp(opts: {
 
   const requestStarterGas = async (body: Record<string, unknown>) => {
     if (!starterGas) {
-      throw new ServiceError(403, "启动 gas 未开启。");
+      throw new ServiceError(403, "Starter gas is not enabled.");
     }
     requireRegistry();
     const address = parseAddress(body.address);
@@ -904,7 +907,7 @@ export function createApp(opts: {
         requireHost(req);
         const draft = opts.store.getAgentDraft(registrationMatch[1]!);
         if (!draft) {
-          return json(404, { error: "找不到该注册文件。" });
+          return json(404, { error: "Registration file not found." });
         }
         const document = buildRegistrationDocument({
           profile: draft.profile,
@@ -938,7 +941,7 @@ export function createApp(opts: {
         (url.pathname === "/discovery/resources" || url.pathname === "/discovery/search")
       ) {
         const host = requireHost(req);
-        if (!discovery) throw new ServiceError(404, "找不到该接口。");
+        if (!discovery) throw new ServiceError(404, "Endpoint not found.");
         const origin = canonicalOrigin(host, publicOrigin);
         const filter = parseDiscoveryFilter(url.searchParams);
         if (url.pathname === "/discovery/search") {
@@ -984,13 +987,13 @@ export function createApp(opts: {
         const filter: { role?: AgentRole; listed?: ListedStatus } = {};
         if (roleParam != null && roleParam !== "") {
           if (!isAgentRole(roleParam)) {
-            throw new ServiceError(400, "代理角色无效。");
+            throw new ServiceError(400, "Invalid agent role.");
           }
           filter.role = roleParam;
         }
         if (listedParam != null && listedParam !== "") {
           if (!isListedStatus(listedParam)) {
-            throw new ServiceError(400, "上架状态无效。");
+            throw new ServiceError(400, "Invalid listing status.");
           }
           filter.listed = listedParam;
         }
@@ -1006,11 +1009,11 @@ export function createApp(opts: {
           opts.config.chain.chainId,
           agentIdMatch[1]!,
         );
-        if (!record) throw new ServiceError(404, "找不到该代理。");
+        if (!record) throw new ServiceError(404, "Agent not found.");
         return json(200, { agent: publicAgent(record) });
       }
       if (req.method === "GET" && url.pathname === "/api/services") {
-        if (!permit2Service) throw new ServiceError(404, "找不到该接口。");
+        if (!permit2Service) throw new ServiceError(404, "Endpoint not found.");
         requireHost(req);
         return json(200, {
           services: serviceCatalog.list().map((definition) => ({
@@ -1050,7 +1053,7 @@ export function createApp(opts: {
       // before the session-gated mutations below.
       const serviceCallMatch = /^\/api\/services\/([^/]+)\/call$/.exec(url.pathname);
       if (serviceCallMatch) {
-        if (!permit2Service) throw new ServiceError(404, "找不到该接口。");
+        if (!permit2Service) throw new ServiceError(404, "Endpoint not found.");
         const host = requireHost(req);
         const body = await readJson(req);
         const result = await permit2Service.call({

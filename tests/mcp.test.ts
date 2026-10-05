@@ -95,6 +95,9 @@ test('platform_info and register_agent_info return guidance without private key 
   const info = (await client.call('platform_info', {})).result as ToolResult;
   expect(info.isError).toBeUndefined();
   expect(info.content?.[0]?.text).toContain('BF Market');
+  expect(info.content?.[0]?.text).toContain('x402');
+  expect(info.content?.[0]?.text).toContain('ERC-8004');
+  expect(info.content?.[0]?.text).toContain('Permit2');
   const structured = info.structuredContent as {
     networks: Array<{ chainId: number; caip2: string }>;
     registry: string;
@@ -124,6 +127,8 @@ test('platform_info and register_agent_info return guidance without private key 
   expect(dump).not.toContain('opsPrivateKey');
   expect(dump).not.toContain(LOCAL_KEY.slice(2));
   expect(dump).not.toContain(OPS_KEY.slice(2));
+  // Every word an agent reads from the MCP surface is English.
+  expect(dump).not.toMatch(/[\u4e00-\u9fff]/);
 });
 
 test('search_services and get_service agree with the discovery catalog', async () => {

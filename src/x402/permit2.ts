@@ -74,27 +74,27 @@ export function permit2PaymentKey(input: {
 
 // Official invalidReason codes (from @x402/evm) mapped to operator-facing text.
 const REASON_TEXT: Record<string, string> = {
-  invalid_exact_evm_scheme: '付款方案与要求不符。',
-  invalid_exact_evm_network_mismatch: '付款网络与要求不符。',
-  invalid_permit2_spender: '付款授权对象不是 x402 Permit2 代理。',
-  invalid_permit2_recipient_mismatch: '付款收款地址与要求不符。',
-  permit2_deadline_expired: '付款授权已过期。',
-  permit2_not_yet_valid: '付款授权尚未生效。',
-  permit2_amount_mismatch: '付款金额与要求不符。',
-  permit2_token_mismatch: '付款代币与要求不符。',
-  invalid_permit2_signature: '付款签名无效。',
-  permit2_allowance_required: '付款人未授权 Permit2 或授权额度不足。',
-  permit2_insufficient_balance: '付款人 USDT 余额不足。',
-  permit2_proxy_not_deployed: '结算代理未部署。',
-  permit2_simulation_failed: '付款无法结算。',
-  permit2_invalid_nonce: '付款授权已被使用。',
-  asset_not_deployed_contract: '付款代币未部署。',
-  unsupported_payload_type: '付款信息无效。',
+  invalid_exact_evm_scheme: 'Payment scheme does not match the requirements.',
+  invalid_exact_evm_network_mismatch: 'Payment network does not match the requirements.',
+  invalid_permit2_spender: 'Payment spender is not the x402 Permit2 proxy.',
+  invalid_permit2_recipient_mismatch: 'Payment recipient does not match the requirements.',
+  permit2_deadline_expired: 'Payment authorization has expired.',
+  permit2_not_yet_valid: 'Payment authorization is not valid yet.',
+  permit2_amount_mismatch: 'Payment amount does not match the requirements.',
+  permit2_token_mismatch: 'Payment token does not match the requirements.',
+  invalid_permit2_signature: 'Invalid payment signature.',
+  permit2_allowance_required: 'Buyer has not approved Permit2, or the allowance is too low.',
+  permit2_insufficient_balance: 'Buyer has insufficient USDT balance.',
+  permit2_proxy_not_deployed: 'Settlement proxy is not deployed.',
+  permit2_simulation_failed: 'Payment cannot be settled.',
+  permit2_invalid_nonce: 'Payment authorization was already used.',
+  asset_not_deployed_contract: 'Payment token is not deployed.',
+  unsupported_payload_type: 'Invalid payment payload.',
 };
 
 function reasonText(reason: string | undefined): string {
-  if (!reason) return '付款信息无效。';
-  return REASON_TEXT[reason] ?? '付款未通过校验。';
+  if (!reason) return 'Invalid payment payload.';
+  return REASON_TEXT[reason] ?? 'Payment failed validation.';
 }
 
 function buildSettleArgs(payload: X402Permit2PaymentPayload) {
@@ -227,12 +227,12 @@ export function createRpcPermit2Facilitator(input: {
       const auth = payload.payload.permit2Authorization;
       const payer = getAddress(auth.from) as Address;
       if (getAddress(auth.spender) !== input.proxy) {
-        throw new ServiceError(402, '付款授权对象不是 x402 Permit2 代理。');
+        throw new ServiceError(402, 'Payment spender is not the x402 Permit2 proxy.');
       }
       const amount = BigInt(requirements.amount);
       const code = await publicClient.getCode({ address: input.proxy });
       if (!code || code === '0x') {
-        throw new ServiceError(402, '结算代理未部署。');
+        throw new ServiceError(402, 'Settlement proxy is not deployed.');
       }
       // The asset may not exist on this chain; a failed read is a payment
       // failure, not a server error.
@@ -252,13 +252,13 @@ export function createRpcPermit2Facilitator(input: {
           args: [payer, input.permit2],
         })) as bigint;
       } catch {
-        throw new ServiceError(402, '付款代币未部署。');
+        throw new ServiceError(402, 'Payment token is not deployed.');
       }
       if (balance < amount) {
-        throw new ServiceError(402, '付款人 USDT 余额不足。');
+        throw new ServiceError(402, 'Buyer has insufficient USDT balance.');
       }
       if (allowance < amount) {
-        throw new ServiceError(402, '付款人未授权 Permit2 或授权额度不足。');
+        throw new ServiceError(402, 'Buyer has not approved Permit2, or the allowance is too low.');
       }
       // Official verifier: scheme/network/spender/recipient/deadline/amount/token,
       // signature recovery and an eth_call simulation of the proxy settle.

@@ -51,12 +51,12 @@ export function createServiceCatalog(opts: {
       serviceId: 'echo',
       providerAgentId: opts.config.serviceProviderAgentId,
       price: opts.config.serviceEchoPrice,
-      description: '回显测试服务：把请求体原样返回。',
+      description: 'Echo test service: returns the request body unchanged.',
       deliver: 'echo',
       inputSchema: {
         type: 'object',
         additionalProperties: true,
-        description: '任意 JSON 对象，会原样回显。',
+        description: 'Any JSON object. It is echoed back unchanged.',
       },
       outputSchema: {
         type: 'object',
@@ -96,9 +96,9 @@ export function createServiceCatalog(opts: {
 
   const resolve = (serviceId: string): ResolvedService => {
     const definition = byId.get(serviceId);
-    if (!definition) throw new ServiceError(404, '找不到该服务。');
+    if (!definition) throw new ServiceError(404, 'Service not found.');
     const available = availability(definition);
-    if (!available) throw new ServiceError(503, '该服务暂时不可用。');
+    if (!available) throw new ServiceError(503, 'This service is temporarily unavailable.');
     return { definition, ...available };
   };
 

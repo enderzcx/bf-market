@@ -649,6 +649,8 @@ test("role permission matrix and promoter state projection", async () => {
   expect(store.getChallenge(hashSessionToken(p!))).not.toBeNull();
   expect(store.getChallenge(p!)).toBeNull();
   const { message } = (await challenge.json()) as { message: string };
+  expect(message.split("\n")[0]).toBe("Settlement wallet binding");
+  expect(message).not.toContain("Purpose:");
   expect(message).toContain("Domain: http://127.0.0.1:4311");
   const signature = await account.signMessage({ message });
   expect(

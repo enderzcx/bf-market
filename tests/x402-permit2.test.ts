@@ -666,7 +666,9 @@ test('invalid, expired, mismatched, unfunded, and unauthorized payments return 4
     paymentSignature: noAllowance.header,
   });
   expect(allowanceRes.status).toBe(402);
-  expect((await allowanceRes.json()).error).toMatch(/Permit2/);
+  expect((await allowanceRes.json()).error).toBe(
+    'Buyer has not approved Permit2, or the allowance is too low.',
+  );
   expect(await env.client.getTransactionCount({ address: opsAddress })).toBe(opsBefore);
 });
 

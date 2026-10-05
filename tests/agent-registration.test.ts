@@ -23,6 +23,7 @@ import {
   identityRegistryAbi,
   type AgentRegistryChain,
 } from "../src/agent-registry.ts";
+import { challengeMessage } from "../src/auth.ts";
 import { runtimeConfig, runtimeFingerprint } from "../src/config.ts";
 import { createApp, type SettlementApp } from "../src/server.ts";
 import { createSource } from "../src/source.ts";
@@ -376,6 +377,57 @@ test("draft rejects a wrong signature, an expired challenge, and a cross-purpose
     body: JSON.stringify({ address: agent.address, signature: gasChallenge.signature, role: "provider", profile: PROFILE }),
   });
   expect(crossed.status).toBe(400);
+});
+
+test("challenges carry a purpose-specific title and reject cross-purpose signatures", async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, {
+    starterGasEnabled: true,
+    opsPrivateKey: OPS_KEY,
+    starterGasWei: 10n ** 18n,
+    starterGasDailyCapWei: 5n * 10n ** 18n,
+    starterGasBalanceThresholdWei: 10n ** 18n,
+  });
+  const agent = privateKeyToAccount(AGENT_KEY);
+
+  const draft = await challengeAndSign(app, agent);
+  expect(draft.message.split("\n")[0]).toBe("BF Market agent registration");
+  expect(draft.message).toContain("Purpose: agent-draft");
+
+  const gas = await challengeAndSign(app, agent, "starter-gas");
+  expect(gas.message.split("\n")[0]).toBe("BF Market starter gas request");
+  expect(gas.message).toContain("Purpose: starter-gas");
+
+  // The console wallet-binding challenge keeps its original title and format.
+  const binding = challengeMessage({
+    domain: app.origin,
+    userId: "demo-partner",
+    address: agent.address,
+    nonce: "0xabc",
+    chainId: 31337,
+    issuedAt: 1_700_000_000_000,
+    expiresAt: 1_700_000_300_000,
+  });
+  expect(binding.split("\n")[0]).toBe("Settlement wallet binding");
+  expect(binding).not.toContain("Purpose:");
+
+  // Each signature is rejected by the other flow even though a challenge for
+  // that address exists in both flows.
+  const draftOnGas = await req(app, "/api/agents/starter-gas", {
+    method: "POST",
+    body: JSON.stringify({ address: agent.address, signature: draft.signature }),
+  });
+  expect(draftOnGas.status).toBe(400);
+  const gasOnDraft = await req(app, "/api/agents/drafts", {
+    method: "POST",
+    body: JSON.stringify({
+      address: agent.address,
+      signature: gas.signature,
+      role: "provider",
+      profile: PROFILE,
+    }),
+  });
+  expect(gasOnDraft.status).toBe(400);
 });
 
 test("open drafts per address are capped", async () => {

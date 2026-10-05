@@ -215,6 +215,12 @@ export function parseAddress(value: unknown): Address {
 // never be replayed in another (wallet binding, agent draft, starter gas).
 export type ChallengePurpose = 'wallet-binding' | 'agent-draft' | 'starter-gas';
 
+const CHALLENGE_TITLES: Record<ChallengePurpose, string> = {
+  'wallet-binding': 'Settlement wallet binding',
+  'agent-draft': 'BF Market agent registration',
+  'starter-gas': 'BF Market starter gas request',
+};
+
 export function challengeMessage(input: {
   domain: string;
   userId: string;
@@ -225,9 +231,10 @@ export function challengeMessage(input: {
   expiresAt: number;
   purpose?: ChallengePurpose;
 }): string {
-  const lines = ['Settlement wallet binding'];
-  if (input.purpose && input.purpose !== 'wallet-binding') {
-    lines.push(`Purpose: ${input.purpose}`);
+  const purpose = input.purpose ?? 'wallet-binding';
+  const lines = [CHALLENGE_TITLES[purpose]];
+  if (purpose !== 'wallet-binding') {
+    lines.push(`Purpose: ${purpose}`);
   }
   lines.push(
     `Domain: ${input.domain}`,

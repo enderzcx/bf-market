@@ -29,29 +29,29 @@ export type Permit2CallResult = {
   headers: Record<string, string>;
 };
 
-function asRecord(value: unknown, label = '付款信息'): Record<string, unknown> {
+function asRecord(value: unknown, label = 'payment info'): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ServiceError(402, `${label}无效。`);
+    throw new ServiceError(402, `Invalid ${label}.`);
   }
   return value as Record<string, unknown>;
 }
 
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 256) {
-    throw new ServiceError(402, `${label}无效。`);
+    throw new ServiceError(402, `Invalid ${label}.`);
   }
   return value;
 }
 
 function requiredUint(value: unknown, label: string): string {
   const raw = requiredString(value, label);
-  if (!UINT_RE.test(raw)) throw new ServiceError(402, `${label}无效。`);
+  if (!UINT_RE.test(raw)) throw new ServiceError(402, `Invalid ${label}.`);
   return raw;
 }
 
 function requiredAddress(value: unknown, label: string): Address {
   if (typeof value !== 'string' || !isAddress(value, { strict: false })) {
-    throw new ServiceError(402, `${label}无效。`);
+    throw new ServiceError(402, `Invalid ${label}.`);
   }
   return getAddress(value) as Address;
 }
@@ -67,57 +67,59 @@ export function parsePermit2Payload(
   requirements: X402PaymentRequirements,
 ): X402Permit2PaymentPayload {
   const row = asRecord(raw);
-  if (row.x402Version !== X402_VERSION) throw new ServiceError(402, '付款信息无效。');
-  const accepted = asRecord(row.accepted, '付款要求');
-  if (accepted.scheme !== 'exact') throw new ServiceError(402, '付款信息无效。');
-  if (accepted.network !== requirements.network) throw new ServiceError(402, '付款网络不符。');
+  if (row.x402Version !== X402_VERSION) throw new ServiceError(402, 'Invalid payment payload.');
+  const accepted = asRecord(row.accepted, 'payment requirements');
+  if (accepted.scheme !== 'exact') throw new ServiceError(402, 'Invalid payment payload.');
+  if (accepted.network !== requirements.network) {
+    throw new ServiceError(402, 'Payment network does not match the requirements.');
+  }
   if (String(accepted.amount) !== requirements.amount) {
-    throw new ServiceError(402, '付款金额不符。');
+    throw new ServiceError(402, 'Payment amount does not match the requirements.');
   }
   if (
-    !sameAddress(requiredAddress(accepted.asset, '付款代币'), requirements.asset) ||
-    !sameAddress(requiredAddress(accepted.payTo, '收款地址'), requirements.payTo)
+    !sameAddress(requiredAddress(accepted.asset, 'payment token'), requirements.asset) ||
+    !sameAddress(requiredAddress(accepted.payTo, 'payout address'), requirements.payTo)
   ) {
-    throw new ServiceError(402, '付款信息无效。');
+    throw new ServiceError(402, 'Invalid payment payload.');
   }
   if (accepted.maxTimeoutSeconds !== requirements.maxTimeoutSeconds) {
-    throw new ServiceError(402, '付款信息无效。');
+    throw new ServiceError(402, 'Invalid payment payload.');
   }
-  const extra = accepted.extra == null ? {} : asRecord(accepted.extra, '付款扩展');
+  const extra = accepted.extra == null ? {} : asRecord(accepted.extra, 'payment extension');
   if (extra.assetTransferMethod !== 'permit2') {
-    throw new ServiceError(402, '付款方式不符。');
+    throw new ServiceError(402, 'Payment transfer method is not supported.');
   }
-  const payload = asRecord(row.payload, '付款载荷');
-  if ('authorization' in payload) throw new ServiceError(402, '付款信息无效。');
-  const signature = requiredString(payload.signature, '付款签名');
+  const payload = asRecord(row.payload, 'payment payload');
+  if ('authorization' in payload) throw new ServiceError(402, 'Invalid payment payload.');
+  const signature = requiredString(payload.signature, 'payment signature');
   if (!SIG_RE.test(signature) || !isHex(signature)) {
-    throw new ServiceError(402, '付款签名无效。');
+    throw new ServiceError(402, 'Invalid payment signature.');
   }
-  const authRaw = asRecord(payload.permit2Authorization, 'Permit2 授权');
-  const permitted = asRecord(authRaw.permitted, 'Permit2 授权金额');
-  const witness = asRecord(authRaw.witness, 'Permit2 收款');
+  const authRaw = asRecord(payload.permit2Authorization, 'Permit2 authorization');
+  const permitted = asRecord(authRaw.permitted, 'Permit2 permitted amount');
+  const witness = asRecord(authRaw.witness, 'Permit2 recipient');
   const authorization: X402Permit2Authorization = {
-    from: requiredAddress(authRaw.from, '付款地址'),
+    from: requiredAddress(authRaw.from, 'payer address'),
     permitted: {
-      token: requiredAddress(permitted.token, '付款代币'),
-      amount: requiredUint(permitted.amount, '授权金额'),
+      token: requiredAddress(permitted.token, 'payment token'),
+      amount: requiredUint(permitted.amount, 'permitted amount'),
     },
-    spender: requiredAddress(authRaw.spender, '授权对象'),
-    nonce: requiredUint(authRaw.nonce, '授权编号'),
-    deadline: requiredUint(authRaw.deadline, '授权期限'),
+    spender: requiredAddress(authRaw.spender, 'spender'),
+    nonce: requiredUint(authRaw.nonce, 'authorization nonce'),
+    deadline: requiredUint(authRaw.deadline, 'authorization deadline'),
     witness: {
-      to: requiredAddress(witness.to, '收款地址'),
-      validAfter: requiredUint(witness.validAfter, '生效时间'),
+      to: requiredAddress(witness.to, 'payout address'),
+      validAfter: requiredUint(witness.validAfter, 'valid-after time'),
     },
   };
   if (authorization.permitted.amount !== requirements.amount) {
-    throw new ServiceError(402, '付款金额不符。');
+    throw new ServiceError(402, 'Payment amount does not match the requirements.');
   }
   if (!sameAddress(authorization.permitted.token, requirements.asset)) {
-    throw new ServiceError(402, '付款代币不符。');
+    throw new ServiceError(402, 'Payment token does not match the requirements.');
   }
   if (!sameAddress(authorization.witness.to, requirements.payTo)) {
-    throw new ServiceError(402, '付款收款地址不符。');
+    throw new ServiceError(402, 'Payment recipient does not match the requirements.');
   }
   return {
     x402Version: X402_VERSION,
@@ -216,7 +218,7 @@ export function createPermit2Service(opts: {
     }): Promise<Permit2CallResult> {
       const transport = input.transport ?? 'http';
       const definition = opts.catalog.get(input.serviceId);
-      if (!definition) throw new ServiceError(404, '找不到该服务。');
+      if (!definition) throw new ServiceError(404, 'Service not found.');
       const { payTo, deliver } = opts.catalog.resolve(input.serviceId);
       const requirements = opts.facilitator.requirementsOf({
         amount: definition.price.toString(),
@@ -265,7 +267,7 @@ export function createPermit2Service(opts: {
         // The same authorization can only back one service; a payload signed for
         // a different service's provider/price must not replay its result.
         if (record && record.serviceId !== input.serviceId) {
-          throw new ServiceError(409, '该付款已用于其他服务。');
+          throw new ServiceError(409, 'This payment was already used for another service.');
         }
         if (record?.status === 'delivered') {
           return {
@@ -275,7 +277,7 @@ export function createPermit2Service(opts: {
           };
         }
         if (record?.status === 'failed') {
-          throw new ServiceError(409, record.error ?? '付款未完成。');
+          throw new ServiceError(409, record.error ?? 'Payment was not completed.');
         }
 
         if (!record || record.status === 'required') {
@@ -340,22 +342,22 @@ export function createPermit2Service(opts: {
             });
           } else if (inspected.reason === 'reverted') {
             opts.store.setServicePaymentStatus(paymentKey, 'failed', {
-              error: '付款结算失败。',
+              error: 'Payment settlement failed.',
             });
             return required({
               origin: input.origin,
               definition,
               requirements,
-              error: '付款结算失败。',
+              error: 'Payment settlement failed.',
               transport,
             });
           } else if (inspected.reason === 'mismatch') {
             opts.store.setServicePaymentStatus(paymentKey, 'failed', {
-              error: '付款收据与要求不符。',
+              error: 'Settlement receipt does not match the requirements.',
             });
             return {
               status: 502,
-              body: { error: '付款收据与要求不符。' },
+              body: { error: 'Settlement receipt does not match the requirements.' },
               headers: {},
             };
           } else {
@@ -383,7 +385,7 @@ export function createPermit2Service(opts: {
             opts.store.setServicePaymentStatus(paymentKey, 'settled', { error: message });
             return {
               status: 500,
-              body: { error: '服务暂时不可用。' },
+              body: { error: 'Service temporarily unavailable.' },
               headers: paymentResponse(record.txHash!, record.payer),
             };
           }
@@ -400,7 +402,7 @@ export function createPermit2Service(opts: {
 
         return {
           status: 502,
-          body: { error: '付款正在确认，请稍后重试。' },
+          body: { error: 'Payment is still confirming. Try again shortly.' },
           headers: {},
         };
       });

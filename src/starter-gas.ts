@@ -149,22 +149,22 @@ export function createStarterGasService(opts: {
     enabled: opts.config.starterGasEnabled,
     async grant(address: Address): Promise<StarterGasGrant> {
       if (!opts.config.starterGasEnabled) {
-        throw new ServiceError(403, '启动 gas 未开启。');
+        throw new ServiceError(403, 'Starter gas is not enabled.');
       }
       let record = opts.store.getStarterGas(address);
       if (record) {
         if (record.status === 'blocked') {
-          throw new ServiceError(409, record.error ?? '该地址的启动 gas 已被阻止。');
+          throw new ServiceError(409, record.error ?? 'Starter gas is blocked for this address.');
         }
         if (record.status === 'confirmed') return snapshot(record);
       } else {
         const balance = await opts.chain.getBalance(address);
         if (balance >= opts.config.starterGasBalanceThresholdWei) {
-          throw new ServiceError(409, '地址余额充足，无需启动 gas。');
+          throw new ServiceError(409, 'This address already has enough gas; starter gas is not needed.');
         }
         const used = opts.store.sumStarterGasForDay(day());
         if (used + opts.config.starterGasWei > opts.config.starterGasDailyCapWei) {
-          throw new ServiceError(429, '今日启动 gas 额度已用完。');
+          throw new ServiceError(429, 'Today\u2019s starter gas budget is used up.');
         }
         record = opts.store.reserveStarterGas({
           address,
@@ -188,7 +188,7 @@ export function createStarterGasService(opts: {
         try {
           await opts.chain.broadcast(record.journal!);
         } catch {
-          throw new ServiceError(502, '启动 gas 广播状态未知，请重试。');
+          throw new ServiceError(502, 'Starter gas broadcast status is unknown. Try again.');
         }
         opts.store.markStarterGasBroadcast(address);
         record = opts.store.getStarterGas(address)!;
@@ -201,8 +201,8 @@ export function createStarterGasService(opts: {
           return snapshot(opts.store.getStarterGas(address)!);
         }
         if (result === 'reverted') {
-          opts.store.blockStarterGas(address, '启动 gas 交易失败。');
-          throw new ServiceError(502, '启动 gas 交易失败。');
+          opts.store.blockStarterGas(address, 'Starter gas transfer failed.');
+          throw new ServiceError(502, 'Starter gas transfer failed.');
         }
         return snapshot(record);
       }
