@@ -16,8 +16,9 @@
     "dev:web": "cd web && bun run dev"
   },
   "dependencies": {
-    "viem": "2.47.0",
-    "@openzeppelin/contracts": "5.4.0"
+    "@openzeppelin/contracts": "5.4.0",
+    "@openzeppelin/contracts-upgradeable": "5.4.0",
+    "viem": "2.47.0"
   },
   "devDependencies": {
     "@types/bun": "1.3.10",
