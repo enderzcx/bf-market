@@ -1,0 +1,64 @@
+{
+  "milestone": "M4",
+  "network": "botchain-testnet",
+  "chainId": 968,
+  "rpc": "https://rpc.bohr.life",
+  "serverCommit": "131b37a",
+  "server": "http://127.0.0.1:4311 (loopback only)",
+  "service": {
+    "serviceId": "echo",
+    "deliver": "echo (test deliverable; real BeefAPI deliverable is M5)",
+    "providerAgentId": "1",
+    "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+    "priceAtomic": "10000",
+    "asset": "0x75edC9335175Fc0552D51D48439F229c10420fe3",
+    "providerListed": "pending (SETTLEMENT_SERVICES_REQUIRE_APPROVED=false for this run)"
+  },
+  "buyer": {
+    "agentId": "0",
+    "address": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+    "usdtFundedBy": "0x28172e0d973fFf24651B6Ed4cA6d1007bc168C94 (Ender, 10 test USDT)"
+  },
+  "settlementPayer": "0x2547c1122c9aFD11eA0c4b66bb033552b90B979F",
+  "x402Permit2Proxy": "0x402085c248EeA27D92E8b30b2C58ed07f9E20001",
+  "transactions": [
+    {
+      "step": "buyer one-time Permit2 approve",
+      "hash": "0x598f5d6b8728c93ac5b5bf51eb6224cba071f27daf8a4bc39df3981defc68a71",
+      "block": "25802421",
+      "from": "buyer",
+      "feeTbot": "0.00094498"
+    },
+    {
+      "step": "payment 1 settle",
+      "hash": "0x8c756fff726f3e1730feeaeb0b16bd3515b1e5c0422765a6462e77f6e1f647a5",
+      "block": "25802426",
+      "from": "ops",
+      "to": "x402Permit2Proxy",
+      "usdtTransfer": "buyer -> provider 0.01",
+      "feeTbot": "0.00200762",
+      "httpStatus": 200,
+      "delivered": {"hello": "BOT Chain", "from": "agent 0"}
+    },
+    {
+      "step": "payment 2 settle (signature only, no new approve)",
+      "hash": "0x5a30ea16673de6f3ef72b280d877d792b68faa010b549c5aa3148af5b540285d",
+      "block": "25802448",
+      "from": "ops",
+      "to": "x402Permit2Proxy",
+      "usdtTransfer": "buyer -> provider 0.01",
+      "feeTbot": "0.0016661",
+      "httpStatus": 200,
+      "delivered": {"call": 2}
+    }
+  ],
+  "readBack": {
+    "allReceiptsSuccessAndFinalized": true,
+    "servicePaymentsStatus": ["delivered", "delivered"],
+    "balancesAfter": {
+      "ops": {"tBOT": "4.82574692", "USDT": "0"},
+      "buyer": {"tBOT": "0.0446923", "USDT": "9.98"},
+      "provider": {"tBOT": "0.04597832", "USDT": "0.02"}
+    }
+  }
+}
