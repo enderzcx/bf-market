@@ -71,15 +71,40 @@ if (chainId !== expected.chainId) {
   throw new Error(`RPC 链 ID ${chainId} 与 ${network} 的 ${expected.chainId} 不一致。`);
 }
 
+const role = argValue("--role", "provider");
+if (role !== "provider" && role !== "buyer") {
+  throw new Error("--role 只允许 provider 或 buyer。");
+}
 const profile = {
-  name: "Demo Agent",
-  description: "BF Market M3 registration demo agent",
-  services: [{ name: "web", endpoint: `${serverUrl}/` }],
-  x402Support: false,
+  name: argValue("--name", "Demo Agent"),
+  description: argValue("--description", "BF Market M3 registration demo agent"),
+  services: [{ name: "web", endpoint: argValue("--endpoint", `${serverUrl}/`) }],
+  x402Support: role === "provider",
   active: true,
 };
 
-console.log(`[demo] agent=${account.address} network=${network} server=${serverUrl}`);
+console.log(`[demo] agent=${account.address} role=${role} network=${network} server=${serverUrl}`);
+
+if (hasFlag("--starter-gas")) {
+  const before = await publicClient.getBalance({ address: account.address });
+  let grant: { status: string; txHash: string | null; amountWei: string } | null = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const gasChallenge = await api<{ message: string }>("/api/agents/challenge", {
+      method: "POST",
+      body: JSON.stringify({ address: account.address, purpose: "starter-gas" }),
+    });
+    const gasSignature = await account.signMessage({ message: gasChallenge.message });
+    grant = await api<{ status: string; txHash: string | null; amountWei: string }>(
+      "/api/agents/starter-gas",
+      { method: "POST", body: JSON.stringify({ address: account.address, signature: gasSignature }) },
+    );
+    if (grant.status === "confirmed") break;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  if (grant?.status !== "confirmed") throw new Error("启动 gas 仍未最终确认。");
+  const after = await publicClient.getBalance({ address: account.address });
+  console.log(`[demo] starterGasTx=${grant.txHash} amountWei=${grant.amountWei} balance ${before} -> ${after}`);
+}
 
 const challenge = await api<{ message: string; purpose: string }>("/api/agents/challenge", {
   method: "POST",
@@ -96,7 +121,7 @@ const draft = await api<{
   body: JSON.stringify({
     address: account.address,
     signature,
-    role: "provider",
+    role,
     profile,
   }),
 });
@@ -121,7 +146,7 @@ if (receipt.status !== "success") {
 console.log(`[demo] registerTx=${txHash}`);
 
 let confirmed: { agent: { agentId: string } } | null = null;
-for (let attempt = 0; attempt < 10; attempt += 1) {
+for (let attempt = 0; attempt < 60; attempt += 1) {
   const result = await api<
     | { status: "pending" }
     | { status: "confirmed"; agent: { agentId: string } }
@@ -141,5 +166,5 @@ console.log(`[demo] confirmed agentId=${confirmed.agent.agentId}`);
 const record = await api<{ agent: unknown }>(`/api/agents/${confirmed.agent.agentId}`);
 console.log(`[demo] record=${JSON.stringify(record.agent)}`);
 
-const document = await fetch(draft.agentURI).then((res) => res.json());
+const document = await fetch(`${serverUrl}/registrations/${draft.draftId}.json`).then((res) => res.json());
 console.log(`[demo] registration=${JSON.stringify(document)}`);

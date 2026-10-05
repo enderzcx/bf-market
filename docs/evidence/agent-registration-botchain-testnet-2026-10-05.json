@@ -1,0 +1,57 @@
+{
+  "milestone": "M3",
+  "network": "botchain-testnet",
+  "chainId": 968,
+  "rpc": "https://rpc.bohr.life",
+  "identityRegistry": "0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607",
+  "serverCommit": "0154325",
+  "server": "http://127.0.0.1:4311 (loopback only)",
+  "starterGasConfig": {
+    "amountWei": "50000000000000000",
+    "dailyCapWei": "1000000000000000000",
+    "balanceThresholdWei": "10000000000000000",
+    "approvedBy": "human:ender (testnet only)"
+  },
+  "agents": [
+    {
+      "agentId": "0",
+      "role": "buyer",
+      "name": "BF Market Demo Buyer",
+      "owner": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "agentWallet": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "starterGasTx": "0x7679bb70d6efd8c43ffa6664b0ec735513e8c285fb50bbe98faa280ee962bfe1",
+      "registerTx": "0x822302dec713723fd500b4ef68c2522ba0e9bf035021e6a56c4c3895b8fcc0d6",
+      "registerBlock": "25797002",
+      "registerFeeTbot": "0.00436272",
+      "tokenURI": "http://127.0.0.1:4311/registrations/eeca2761506b1446354a5b5ab313527b.json",
+      "knownIssue": "tokenURI points to loopback because a stale server process without SETTLEMENT_PUBLIC_ORIGIN served this request; needs setAgentURI to the public origin once an update flow exists"
+    },
+    {
+      "agentId": "1",
+      "role": "provider",
+      "name": "BeefAPI",
+      "listed": "pending",
+      "owner": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+      "agentWallet": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+      "starterGasTx": "0xd9decf276bd7253481be754535828e5bce9721951641de4c27b917d1d1984b3d",
+      "registerTx": "0x84a5e12fb35194aaf4d20be58878fb82991cdee6c8a80da835c39c3c1129050a",
+      "registerBlock": "25797063",
+      "registerFeeTbot": "0.00402168",
+      "tokenURI": "https://market.bflabs.app/registrations/844a074ef9d47aff478d168f082077fa.json"
+    }
+  ],
+  "readBack": {
+    "ownerOfAndAgentWalletMatch": true,
+    "registerReceiptsSuccess": true,
+    "finalizedBlockAtCheck": "25797109",
+    "balancesTbotAfter": {
+      "ops": "4.82942064",
+      "buyer": "0.04563728",
+      "provider": "0.04597832"
+    }
+  },
+  "notes": [
+    "Starter gas went from 0 to 0.05 tBOT for both fresh wallets before registration.",
+    "market.bflabs.app is not serving registration files yet; documents are served by the platform at /registrations/<draftId>.json once deployed."
+  ]
+}
