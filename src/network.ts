@@ -30,6 +30,10 @@ export type NetworkProfile = {
   readonly asset: NetworkAsset;
   readonly permit2?: Address;
   readonly x402Permit2Proxy?: Address;
+  // ERC-8004 IdentityRegistry (proxy). Declared here when the network has a
+  // deployed registry; the local profile leaves it unset so tests and local
+  // configs inject the freshly deployed address.
+  readonly identityRegistry?: Address;
   readonly finality: FinalityRule;
   // Whether the Settlement payout contract is mandatory for this network.
   // false lets the service start with the payout worker disabled.
@@ -92,6 +96,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
     },
     permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
     x402Permit2Proxy: '0x402085c248EeA27D92E8b30b2C58ed07f9E20001',
+    identityRegistry: '0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607',
     finality: { kind: 'finalized' },
     payoutsRequired: false,
   },
@@ -162,6 +167,9 @@ function fingerprintPayload(profile: NetworkProfile) {
     permit2: profile.permit2 ? getAddress(profile.permit2).toLowerCase() : null,
     x402Permit2Proxy: profile.x402Permit2Proxy
       ? getAddress(profile.x402Permit2Proxy).toLowerCase()
+      : null,
+    identityRegistry: profile.identityRegistry
+      ? getAddress(profile.identityRegistry).toLowerCase()
       : null,
     finality: profile.finality,
   };

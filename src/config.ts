@@ -73,6 +73,16 @@ export type RuntimeConfig = {
   orderDemo: boolean;
   authEnabled: boolean;
   publicOrigin: string | null;
+  // Public origin used in on-chain agent registration documents. Separate from
+  // the auth publicOrigin: registration only needs a network with an identity
+  // registry, not the Fuji order-demo configuration.
+  agentOrigin: string | null;
+  identityRegistry: Address | null;
+  starterGasEnabled: boolean;
+  starterGasWei: bigint;
+  starterGasDailyCapWei: bigint;
+  starterGasBalanceThresholdWei: bigint;
+  opsPrivateKey: Hex | null;
   merchantPasswordHash: string;
   promoterPasswordHash: string;
   x402Enabled: boolean;
@@ -181,6 +191,19 @@ function flagEnv(value: string | undefined, label: string): boolean {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error(`${label} 只允许 true 或 false。`);
+}
+
+function weiEnv(value: string | undefined, label: string): bigint | undefined {
+  if (value == null || value === '') return undefined;
+  if (!/^[0-9]+$/.test(value)) throw new Error(`${label} 必须是非负整数 wei。`);
+  return BigInt(value);
+}
+
+function requiredWei(value: bigint | undefined, label: string): bigint {
+  if (value == null || value <= 0n) {
+    throw new Error(`${label} 必须提供大于 0 的 wei 金额。`);
+  }
+  return value;
 }
 
 function namespacePath(path: string, profile: NetworkProfile): string {
@@ -352,6 +375,55 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
       );
     }
   }
+
+  // The identity registry comes from the profile, or (local only) from the
+  // injected config, so tests and local chains can point at a fresh deployment.
+  const identityRegistry = profile.identityRegistry
+    ? getAddress(profile.identityRegistry) as Address
+    : profile.name === 'local' && partial.identityRegistry
+      ? requiredAddress(partial.identityRegistry, '身份注册表')
+      : null;
+  const hasRegistry = identityRegistry !== null;
+  const agentOrigin = partial.agentOrigin ?? null;
+  if (agentOrigin) {
+    parsePublicOrigin(agentOrigin);
+    if (!hasRegistry) {
+      throw new Error('SETTLEMENT_PUBLIC_ORIGIN 用于注册文件时，网络必须有身份注册表。');
+    }
+  }
+
+  const starterGasEnabled = partial.starterGasEnabled ?? false;
+  let starterGasWei = 0n;
+  let starterGasDailyCapWei = 0n;
+  let starterGasBalanceThresholdWei = 0n;
+  let opsPrivateKey: Hex | null = partial.opsPrivateKey ?? null;
+  if (starterGasEnabled) {
+    if (!hasRegistry) {
+      throw new Error('启动 gas 只允许在有身份注册表的测试网或本地网络开启。');
+    }
+    starterGasWei = requiredWei(partial.starterGasWei, 'SETTLEMENT_STARTER_GAS_WEI');
+    starterGasDailyCapWei = requiredWei(
+      partial.starterGasDailyCapWei,
+      'SETTLEMENT_STARTER_GAS_DAILY_CAP_WEI',
+    );
+    starterGasBalanceThresholdWei = requiredWei(
+      partial.starterGasBalanceThresholdWei,
+      'SETTLEMENT_STARTER_GAS_BALANCE_THRESHOLD_WEI',
+    );
+    if (starterGasWei > starterGasDailyCapWei) {
+      throw new Error('单次启动 gas 金额不能超过每日总额上限。');
+    }
+    if (!opsPrivateKey) {
+      throw new Error('启动 gas 需要 SETTLEMENT_OPS_PRIVATE_KEY（仅从环境读取）。');
+    }
+    opsPrivateKey = requiredKey(opsPrivateKey, '启动 gas 私钥');
+    if (privateKey && opsPrivateKey === privateKey) {
+      throw new Error('启动 gas 私钥必须与出款执行钱包私钥不同。');
+    }
+  } else {
+    opsPrivateKey = null;
+  }
+
   return {
     host,
     port: partial.port ?? DEFAULT_PORT,
@@ -390,6 +462,13 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     partnerName: partial.partnerName ?? PARTNER_NAME,
     authEnabled,
     publicOrigin,
+    agentOrigin,
+    identityRegistry,
+    starterGasEnabled,
+    starterGasWei,
+    starterGasDailyCapWei,
+    starterGasBalanceThresholdWei,
+    opsPrivateKey,
     merchantPasswordHash,
     promoterPasswordHash,
     x402Enabled,
@@ -397,7 +476,10 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
   };
 }
 
-type FileConfig = Partial<ChainConfig> & { testOnly?: boolean };
+type FileConfig = Partial<ChainConfig> & {
+  testOnly?: boolean;
+  identityRegistry?: string;
+};
 
 export function loadConfig(opts?: {
   cwd?: string;
@@ -511,6 +593,23 @@ export function loadConfig(opts?: {
       : resolve(cwd, env.SETTLEMENT_PUBLIC_DIR)
     : join(import.meta.dir, '../web/dist');
 
+  const identityRegistryRaw = env.SETTLEMENT_IDENTITY_REGISTRY ?? file?.identityRegistry;
+  const registryConfigured =
+    !!profile.identityRegistry ||
+    (profile.name === 'local' && identityRegistryRaw != null && identityRegistryRaw !== '');
+  // SETTLEMENT_PUBLIC_ORIGIN serves two purposes: the Fuji order-demo public
+  // origin (auth + order demo) and the agent registration document origin.
+  // Each network consumes only the one it can support.
+  const publicOriginRaw =
+    env.SETTLEMENT_PUBLIC_ORIGIN && env.SETTLEMENT_PUBLIC_ORIGIN !== ''
+      ? parsePublicOrigin(env.SETTLEMENT_PUBLIC_ORIGIN)
+      : null;
+  if (publicOriginRaw && profile.name !== 'fuji' && !registryConfigured) {
+    throw new Error('SETTLEMENT_PUBLIC_ORIGIN 需要 Fuji 测试网或带身份注册表的网络。');
+  }
+  const publicOrigin = profile.name === 'fuji' ? publicOriginRaw : null;
+  const agentOrigin = publicOriginRaw && registryConfigured ? publicOriginRaw : null;
+
   const cfg = runtimeConfig({
     host: env.SETTLEMENT_HOST ?? '127.0.0.1',
     port: intEnv(env.SETTLEMENT_PORT, DEFAULT_PORT, 'SETTLEMENT_PORT'),
@@ -538,10 +637,25 @@ export function loadConfig(opts?: {
     publicDir,
     orderDemo,
     authEnabled: flagEnv(env.SETTLEMENT_AUTH_ENABLED, 'SETTLEMENT_AUTH_ENABLED'),
-    publicOrigin:
-      env.SETTLEMENT_PUBLIC_ORIGIN && env.SETTLEMENT_PUBLIC_ORIGIN !== ''
-        ? parsePublicOrigin(env.SETTLEMENT_PUBLIC_ORIGIN)
-        : null,
+    publicOrigin,
+    agentOrigin,
+    identityRegistry: identityRegistryRaw as Address | undefined,
+    starterGasEnabled: flagEnv(
+      env.SETTLEMENT_STARTER_GAS_ENABLED,
+      'SETTLEMENT_STARTER_GAS_ENABLED',
+    ),
+    starterGasWei: weiEnv(env.SETTLEMENT_STARTER_GAS_WEI, 'SETTLEMENT_STARTER_GAS_WEI'),
+    starterGasDailyCapWei: weiEnv(
+      env.SETTLEMENT_STARTER_GAS_DAILY_CAP_WEI,
+      'SETTLEMENT_STARTER_GAS_DAILY_CAP_WEI',
+    ),
+    starterGasBalanceThresholdWei: weiEnv(
+      env.SETTLEMENT_STARTER_GAS_BALANCE_THRESHOLD_WEI,
+      'SETTLEMENT_STARTER_GAS_BALANCE_THRESHOLD_WEI',
+    ),
+    // The starter-gas ops key is env-only and kept separate from the payout
+    // executor key so a leak of one never unlocks the other.
+    opsPrivateKey: env.SETTLEMENT_OPS_PRIVATE_KEY as Hex | undefined,
     merchantPasswordHash: env.SETTLEMENT_MERCHANT_PASSWORD_HASH ?? '',
     promoterPasswordHash: env.SETTLEMENT_PROMOTER_PASSWORD_HASH ?? '',
     x402Enabled: flagEnv(env.SETTLEMENT_X402_ENABLED, 'SETTLEMENT_X402_ENABLED'),

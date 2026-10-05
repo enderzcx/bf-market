@@ -12,6 +12,61 @@ export type PayoutStatus =
 export type Payout = { id: Hex; recipient: Address; amount: bigint };
 export type Prepared = { rawTransaction: Hex; hash: Hex };
 
+export type AgentRole = 'provider' | 'buyer';
+export type ListedStatus = 'pending' | 'approved' | 'rejected';
+
+export type AgentProfileService = { name: string; endpoint: string };
+
+export type AgentProfile = {
+  name: string;
+  description?: string;
+  image?: string;
+  services: AgentProfileService[];
+  x402Support?: boolean;
+  active?: boolean;
+};
+
+export type AgentDraftRecord = {
+  draftId: string;
+  address: Address;
+  role: AgentRole;
+  profile: AgentProfile;
+  createdAt: number;
+  registeredAgentId: string | null;
+};
+
+export type AgentRecord = {
+  chainId: number;
+  agentId: string;
+  owner: Address;
+  agentWallet: Address;
+  role: AgentRole;
+  listed: ListedStatus;
+  agentUri: string;
+  registerTx: Hex;
+  blockNumber: string | null;
+  createdAt: number;
+};
+
+export type StarterGasStatus =
+  | 'reserved'
+  | 'signed'
+  | 'broadcast'
+  | 'confirmed'
+  | 'blocked';
+
+export type StarterGasRecord = {
+  address: Address;
+  amountWei: string;
+  txHash: Hex | null;
+  journal: Hex | null;
+  status: StarterGasStatus;
+  day: string;
+  error: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export interface Chain {
   prepare(p: Payout): Promise<Prepared>;
   broadcast(raw: Hex): Promise<void>;

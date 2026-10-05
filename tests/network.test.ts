@@ -136,8 +136,15 @@ test("the three known profiles carry the expected chain facts", () => {
   expect(BOTCHAIN.x402Permit2Proxy?.toLowerCase()).toBe(
     "0x402085c248eea27d92e8b30b2c58ed07f9e20001",
   );
+  expect(BOTCHAIN.identityRegistry?.toLowerCase()).toBe(
+    "0xe35a670ec84477b54f976ddfa5f8e4601ffc8607",
+  );
   expect(BOTCHAIN.finality).toEqual({ kind: "finalized" });
   expect(BOTCHAIN.payoutsRequired).toBe(false);
+
+  // Only the BOT Chain testnet declares a registry; Fuji and local inject one.
+  expect(fuji.identityRegistry).toBeUndefined();
+  expect(local.identityRegistry).toBeUndefined();
 
   // No 677 mainnet or other networks were added.
   expect(profileForChainId(677)).toBeNull();
@@ -206,6 +213,15 @@ test("preflight rejects missing Permit2 or x402 proxy code", async () => {
   ).rejects.toThrow(/代理/);
 });
 
+test("preflight rejects a declared identity registry without code", async () => {
+  await expect(
+    assertNetworkPreflight({
+      profile: BOTCHAIN,
+      rpc: stubRpc({ chainId: 968, noCode: [BOTCHAIN.identityRegistry!] }),
+    }),
+  ).rejects.toThrow(/注册表/);
+});
+
 test("x402 cannot be enabled on a network without EIP-3009", () => {
   expect(() =>
     runtimeConfig({
@@ -226,6 +242,42 @@ test("botchain-testnet starts without a Settlement address and disables payouts"
   expect(cfg.chain.token.toLowerCase()).toBe(BOTCHAIN.asset.address.toLowerCase());
   expect(cfg.payoutsEnabled).toBe(false);
   expect(cfg.payoutsDisabledReason).toContain("出款");
+  expect(cfg.identityRegistry?.toLowerCase()).toBe(
+    BOTCHAIN.identityRegistry!.toLowerCase(),
+  );
+});
+
+test("agent registration and starter gas stay closed without a registry", () => {
+  const base = {
+    chain: {
+      rpcUrl: "https://example.invalid",
+      chainId: 43113,
+      contract: CONTRACT,
+      token: CIRCLE_FUJI_USDC,
+      privateKey: KEY,
+    },
+  };
+  expect(() =>
+    runtimeConfig({ ...base, agentOrigin: "https://example.com" }),
+  ).toThrow(/身份注册表/);
+  expect(() =>
+    runtimeConfig({
+      ...base,
+      starterGasEnabled: true,
+      starterGasWei: 1n,
+      starterGasDailyCapWei: 2n,
+      starterGasBalanceThresholdWei: 1n,
+      opsPrivateKey: KEY,
+    }),
+  ).toThrow(/身份注册表/);
+  // The local profile accepts an injected registry and an agent origin.
+  const local = runtimeConfig({
+    ...localChain(),
+    identityRegistry: CONTRACT,
+    agentOrigin: "https://agents.example.com",
+  });
+  expect(local.identityRegistry).toBe(CONTRACT);
+  expect(local.agentOrigin).toBe("https://agents.example.com");
 });
 
 test("public networks pin the profile asset and reject a token override", () => {

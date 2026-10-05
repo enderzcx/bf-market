@@ -13,12 +13,19 @@ import {
 import type { X402OrderRecord, X402PaymentPayload } from "./x402/types.ts";
 import {
   type Address,
+  type AgentDraftRecord,
+  type AgentProfile,
+  type AgentRecord,
+  type AgentRole,
   type AuthRole,
   type Hex,
+  type ListedStatus,
   type PartnerRecord,
   type PayoutRecord,
   type PayoutStatus,
   type PublicPayout,
+  type StarterGasRecord,
+  type StarterGasStatus,
   type X402PaymentStatus,
   ServiceError,
   toPublicPayout,
@@ -42,6 +49,22 @@ const X402_STATUSES = new Set<X402PaymentStatus>([
   "submitted",
   "settled",
   "completed",
+  "blocked",
+]);
+
+const AGENT_ROLES = new Set<AgentRole>(["provider", "buyer"]);
+
+const LISTED_STATUSES = new Set<ListedStatus>([
+  "pending",
+  "approved",
+  "rejected",
+]);
+
+const STARTER_GAS_STATUSES = new Set<StarterGasStatus>([
+  "reserved",
+  "signed",
+  "broadcast",
+  "confirmed",
   "blocked",
 ]);
 
@@ -74,6 +97,67 @@ function mapX402Order(row: Record<string, unknown>): X402OrderRecord {
     error: row.error ? String(row.error) : null,
     scanFromBlock: row.scan_from_block ? BigInt(String(row.scan_from_block)) : null,
     scanToBlock: row.scan_to_block ? BigInt(String(row.scan_to_block)) : null,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+function mapAgentDraft(row: Record<string, unknown>): AgentDraftRecord {
+  const role = String(row.role);
+  if (!AGENT_ROLES.has(role as AgentRole)) {
+    throw new ServiceError(500, "代理草稿状态异常。");
+  }
+  let profile: AgentProfile;
+  try {
+    profile = JSON.parse(String(row.profile_json)) as AgentProfile;
+  } catch {
+    throw new ServiceError(500, "代理草稿状态异常。");
+  }
+  return {
+    draftId: String(row.draft_id),
+    address: String(row.address) as Address,
+    role: role as AgentRole,
+    profile,
+    createdAt: Number(row.created_at),
+    registeredAgentId: row.registered_agent_id
+      ? String(row.registered_agent_id)
+      : null,
+  };
+}
+
+function mapAgent(row: Record<string, unknown>): AgentRecord {
+  const role = String(row.role);
+  const listed = String(row.listed);
+  if (!AGENT_ROLES.has(role as AgentRole) || !LISTED_STATUSES.has(listed as ListedStatus)) {
+    throw new ServiceError(500, "代理记录状态异常。");
+  }
+  return {
+    chainId: Number(row.chain_id),
+    agentId: String(row.agent_id),
+    owner: String(row.owner) as Address,
+    agentWallet: String(row.agent_wallet) as Address,
+    role: role as AgentRole,
+    listed: listed as ListedStatus,
+    agentUri: String(row.agent_uri),
+    registerTx: String(row.register_tx) as Hex,
+    blockNumber: row.block_number == null ? null : String(row.block_number),
+    createdAt: Number(row.created_at),
+  };
+}
+
+function mapStarterGas(row: Record<string, unknown>): StarterGasRecord {
+  const status = String(row.status);
+  if (!STARTER_GAS_STATUSES.has(status as StarterGasStatus)) {
+    throw new ServiceError(500, "启动 gas 状态异常。");
+  }
+  return {
+    address: String(row.address) as Address,
+    amountWei: String(row.amount_wei),
+    txHash: row.tx_hash ? (String(row.tx_hash) as Hex) : null,
+    journal: row.journal ? (String(row.journal) as Hex) : null,
+    status: status as StarterGasStatus,
+    day: String(row.day),
+    error: row.error ? String(row.error) : null,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
@@ -223,6 +307,41 @@ export function createStore(opts: {
       created_at INTEGER NOT NULL,
       UNIQUE (chain_id, token, payer, nonce)
     );
+    CREATE TABLE IF NOT EXISTS agent_drafts (
+      draft_id TEXT PRIMARY KEY,
+      address TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('provider', 'buyer')),
+      profile_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      registered_agent_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS agent_drafts_address ON agent_drafts(address);
+    CREATE TABLE IF NOT EXISTS agents (
+      chain_id INTEGER NOT NULL,
+      agent_id TEXT NOT NULL,
+      owner TEXT NOT NULL,
+      agent_wallet TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('provider', 'buyer')),
+      listed TEXT NOT NULL CHECK (listed IN ('pending', 'approved', 'rejected')),
+      agent_uri TEXT NOT NULL,
+      register_tx TEXT NOT NULL,
+      block_number TEXT,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (chain_id, agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS agents_listed ON agents(listed);
+    CREATE TABLE IF NOT EXISTS starter_gas_grants (
+      address TEXT PRIMARY KEY,
+      amount_wei TEXT NOT NULL,
+      tx_hash TEXT,
+      journal TEXT,
+      status TEXT NOT NULL CHECK (status IN ('reserved', 'signed', 'broadcast', 'confirmed', 'blocked')),
+      day TEXT NOT NULL,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS starter_gas_grants_day ON starter_gas_grants(day);
   `);
   db.run(
     `INSERT OR IGNORE INTO partner (id, name, wallet, auto_settle, available, pending, paid, consumed)
@@ -301,6 +420,28 @@ export function createStore(opts: {
       .query(`SELECT * FROM payouts WHERE source_id = ?`)
       .get(sourceId) as Record<string, unknown> | null;
     return row ? mapPayout(row) : null;
+  };
+
+  const getAgentDraft = (draftId: string): AgentDraftRecord | null => {
+    const row = db
+      .query(`SELECT * FROM agent_drafts WHERE draft_id = ?`)
+      .get(draftId) as Record<string, unknown> | null;
+    return row ? mapAgentDraft(row) : null;
+  };
+
+  const getAgent = (chainId: number, agentId: string): AgentRecord | null => {
+    const row = db
+      .query(`SELECT * FROM agents WHERE chain_id = ? AND agent_id = ?`)
+      .get(chainId, agentId) as Record<string, unknown> | null;
+    return row ? mapAgent(row) : null;
+  };
+
+  const getStarterGas = (address_: string): StarterGasRecord | null => {
+    if (!isAddress(address_, { strict: false })) return null;
+    const row = db
+      .query(`SELECT * FROM starter_gas_grants WHERE address = ?`)
+      .get(getAddress(address_)) as Record<string, unknown> | null;
+    return row ? mapStarterGas(row) : null;
   };
 
   const getPayout = (id: string): PayoutRecord | null => {
@@ -1107,6 +1248,184 @@ export function createStore(opts: {
         paid: balances?.paid ?? formatAmount(partner.paid),
         consumed: balances?.consumed ?? formatAmount(partner.consumed),
       };
+    },
+    createAgentDraft(input: {
+      draftId: string;
+      address: Address;
+      role: AgentRole;
+      profile: AgentProfile;
+      createdAt?: number;
+    }): AgentDraftRecord {
+      const owner = address(input.address, "代理地址");
+      if (!AGENT_ROLES.has(input.role)) {
+        throw new ServiceError(400, "代理角色无效。");
+      }
+      db.run(
+        `INSERT INTO agent_drafts (draft_id, address, role, profile_json, created_at, registered_agent_id)
+         VALUES (?, ?, ?, ?, ?, NULL)`,
+        [
+          input.draftId,
+          owner,
+          input.role,
+          JSON.stringify(input.profile),
+          input.createdAt ?? now(),
+        ],
+      );
+      return getAgentDraft(input.draftId)!;
+    },
+    getAgentDraft,
+    countOpenAgentDrafts(address_: string): number {
+      const row = db
+        .query(
+          `SELECT COUNT(*) AS n FROM agent_drafts WHERE address = ? AND registered_agent_id IS NULL`,
+        )
+        .get(address(address_)) as { n: number };
+      return Number(row.n);
+    },
+    setDraftRegistered(draftId: string, agentId: string) {
+      const result = db.run(
+        `UPDATE agent_drafts SET registered_agent_id = ? WHERE draft_id = ? AND registered_agent_id IS NULL`,
+        [agentId, draftId],
+      );
+      if (result.changes !== 1) {
+        const existing = getAgentDraft(draftId);
+        if (!existing || existing.registeredAgentId !== agentId) {
+          throw new ServiceError(409, "草稿状态异常。");
+        }
+      }
+    },
+    upsertAgent(input: {
+      chainId: number;
+      agentId: string;
+      owner: Address;
+      agentWallet: Address;
+      role: AgentRole;
+      listed: ListedStatus;
+      agentUri: string;
+      registerTx: Hex;
+      blockNumber?: string | null;
+      createdAt?: number;
+    }): AgentRecord {
+      const owner = address(input.owner, "代理所有者");
+      const wallet = address(input.agentWallet, "代理钱包");
+      return tx(() => {
+        const existing = getAgent(input.chainId, input.agentId);
+        if (existing) {
+          if (existing.owner.toLowerCase() !== owner.toLowerCase()) {
+            throw new ServiceError(409, "该 agentId 已绑定其他所有者。");
+          }
+          return existing;
+        }
+        db.run(
+          `INSERT INTO agents (chain_id, agent_id, owner, agent_wallet, role, listed, agent_uri, register_tx, block_number, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            input.chainId,
+            input.agentId,
+            owner,
+            wallet,
+            input.role,
+            input.listed,
+            input.agentUri,
+            input.registerTx,
+            input.blockNumber ?? null,
+            input.createdAt ?? now(),
+          ],
+        );
+        return getAgent(input.chainId, input.agentId)!;
+      });
+    },
+    getAgent,
+    listAgents(filter?: { role?: AgentRole; listed?: ListedStatus }): AgentRecord[] {
+      const clauses: string[] = [];
+      const params: string[] = [];
+      if (filter?.role) {
+        clauses.push("role = ?");
+        params.push(filter.role);
+      }
+      if (filter?.listed) {
+        clauses.push("listed = ?");
+        params.push(filter.listed);
+      }
+      const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+      const rows = db
+        .query(
+          `SELECT * FROM agents ${where} ORDER BY chain_id ASC, CAST(agent_id AS INTEGER) ASC`,
+        )
+        .all(...params) as Record<string, unknown>[];
+      return rows.map(mapAgent);
+    },
+    getStarterGas,
+    sumStarterGasForDay(day: string): bigint {
+      const row = db
+        .query(
+          `SELECT COALESCE(SUM(CAST(amount_wei AS INTEGER)), 0) AS total
+           FROM starter_gas_grants WHERE day = ? AND status != 'blocked'`,
+        )
+        .get(day) as { total: number | null };
+      return BigInt(row.total ?? 0);
+    },
+    reserveStarterGas(input: {
+      address: Address;
+      amountWei: bigint;
+      day: string;
+      createdAt?: number;
+    }): StarterGasRecord {
+      const target = address(input.address, "启动 gas 地址");
+      return tx(() => {
+        const existing = getStarterGas(target);
+        if (existing) return existing;
+        const at = input.createdAt ?? now();
+        db.run(
+          `INSERT INTO starter_gas_grants (address, amount_wei, tx_hash, journal, status, day, error, created_at, updated_at)
+           VALUES (?, ?, NULL, NULL, 'reserved', ?, NULL, ?, ?)`,
+          [target, input.amountWei.toString(), input.day, at, at],
+        );
+        return getStarterGas(target)!;
+      });
+    },
+    markStarterGasSigned(address_: Address, journal: Hex, txHash: Hex) {
+      const result = db.run(
+        `UPDATE starter_gas_grants SET status = 'signed', journal = ?, tx_hash = ?, error = NULL, updated_at = ?
+         WHERE address = ? AND status = 'reserved'`,
+        [journal, txHash, now(), address(address_)],
+      );
+      if (result.changes !== 1) {
+        throw new ServiceError(409, "这笔启动 gas 还不能签名。");
+      }
+    },
+    markStarterGasBroadcast(address_: Address) {
+      const result = db.run(
+        `UPDATE starter_gas_grants SET status = 'broadcast', updated_at = ?
+         WHERE address = ? AND status IN ('signed', 'broadcast') AND journal IS NOT NULL`,
+        [now(), address(address_)],
+      );
+      if (result.changes !== 1) {
+        const current = getStarterGas(address_);
+        if (current?.status !== "broadcast") {
+          throw new ServiceError(409, "这笔启动 gas 还不能广播。");
+        }
+      }
+    },
+    markStarterGasConfirmed(address_: Address) {
+      const result = db.run(
+        `UPDATE starter_gas_grants SET status = 'confirmed', error = NULL, updated_at = ?
+         WHERE address = ? AND status IN ('broadcast', 'confirmed')`,
+        [now(), address(address_)],
+      );
+      if (result.changes !== 1) {
+        const current = getStarterGas(address_);
+        if (current?.status !== "confirmed") {
+          throw new ServiceError(409, "这笔启动 gas 还不能确认。");
+        }
+      }
+    },
+    blockStarterGas(address_: Address, error: string) {
+      db.run(
+        `UPDATE starter_gas_grants SET status = 'blocked', error = ?, updated_at = ?
+         WHERE address = ? AND status IN ('reserved', 'signed', 'broadcast', 'blocked')`,
+        [error, now(), address(address_)],
+      );
     },
   };
 }

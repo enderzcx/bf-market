@@ -2,6 +2,7 @@ import { staticFileFor } from "./static.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { getAddress } from "viem";
 import {
   allowedHost,
   canonicalOrigin,
@@ -38,6 +39,24 @@ import {
 } from "./config.ts";
 import { acquireProcessLock } from "./lock.ts";
 import { assertNetworkPreflight, rpcPreflightClient } from "./preflight.ts";
+import {
+  agentRegistryId,
+  agentUriFor,
+  buildRegistrationDocument,
+  createRpcAgentRegistryChain,
+  decodeRegisteredEvent,
+  MAX_AGENT_DRAFTS_PER_ADDRESS,
+  newDraftId,
+  parseDraftIdFromUri,
+  registerCalldata,
+  validateAgentProfile,
+  type AgentRegistryChain,
+} from "./agent-registry.ts";
+import {
+  createRpcStarterGasChain,
+  createStarterGasService,
+  type StarterGasChain,
+} from "./starter-gas.ts";
 import { parseAmount } from "./money.ts";
 import {
   commissionFromBalances,
@@ -49,9 +68,14 @@ import {
 } from "./source.ts";
 import { createStore, type Store } from "./store.ts";
 import {
+  type Address,
+  type AgentRecord,
+  type AgentRole,
   type AppState,
   type AuthRole,
   type Chain,
+  type Hex,
+  type ListedStatus,
   type PublicOrder,
   type Source,
   type SourceOrder,
@@ -204,6 +228,8 @@ export function createApp(opts: {
   now?: () => number;
   x402Facilitator?: X402Facilitator;
   x402Chain?: X402Chain;
+  agentRegistryChain?: AgentRegistryChain;
+  starterGasChain?: StarterGasChain;
 }): SettlementApp {
   assertLoopbackBind(opts.config.host);
   const origin = originOf(opts.config.host, opts.config.port);
@@ -396,6 +422,227 @@ export function createApp(opts: {
       })
     : null;
 
+  const identityRegistry = opts.config.identityRegistry;
+  const registryChain = identityRegistry
+    ? (opts.agentRegistryChain ??
+      createRpcAgentRegistryChain({
+        rpcUrl: opts.config.chain.rpcUrl,
+        chainId: opts.config.chain.chainId,
+        registry: identityRegistry,
+      }))
+    : null;
+  const starterGas = opts.config.starterGasEnabled
+    ? createStarterGasService({
+        store: opts.store,
+        chain:
+          opts.starterGasChain ??
+          createRpcStarterGasChain({
+            rpcUrl: opts.config.chain.rpcUrl,
+            chainId: opts.config.chain.chainId,
+            privateKey: opts.config.opsPrivateKey!,
+          }),
+        config: opts.config,
+        now,
+      })
+    : null;
+
+  const allowInsecureLocal = opts.config.network.name === "local";
+  const agentOriginOf = (host: string) =>
+    opts.config.agentOrigin ?? originFromHost(host);
+
+  const requireRegistry = () => {
+    if (!registryChain || !identityRegistry) {
+      throw new ServiceError(503, "该网络未配置身份注册表，注册功能不可用。");
+    }
+    return { chain: registryChain, registry: identityRegistry };
+  };
+
+  const publicAgent = (record: AgentRecord) => ({
+    agentId: record.agentId,
+    chainId: record.chainId,
+    owner: record.owner,
+    agentWallet: record.agentWallet,
+    role: record.role,
+    listed: record.listed,
+    agentUri: record.agentUri,
+    registerTx: record.registerTx,
+    blockNumber: record.blockNumber,
+    createdAt: record.createdAt,
+  });
+
+  const AGENT_CHALLENGE_PURPOSES = new Set(["agent-draft", "starter-gas"] as const);
+  type AgentChallengePurpose = "agent-draft" | "starter-gas";
+  const challengeKey = (purpose: AgentChallengePurpose, address: string) =>
+    `${purpose}:${address.toLowerCase()}`;
+  const parseChallengePurpose = (value: unknown): AgentChallengePurpose => {
+    if (value == null || value === "") return "agent-draft";
+    if (typeof value !== "string" || !AGENT_CHALLENGE_PURPOSES.has(value as AgentChallengePurpose)) {
+      throw new ServiceError(400, "验证用途无效。");
+    }
+    return value as AgentChallengePurpose;
+  };
+  const isAgentRole = (value: string): value is AgentRole =>
+    value === "provider" || value === "buyer";
+  const isListedStatus = (value: string): value is ListedStatus =>
+    value === "pending" || value === "approved" || value === "rejected";
+  const parseAgentRole = (value: unknown): AgentRole => {
+    if (typeof value !== "string" || !isAgentRole(value)) {
+      throw new ServiceError(400, "代理角色无效。");
+    }
+    return value;
+  };
+  const parseTxHash = (value: unknown): Hex => {
+    if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+      throw new ServiceError(400, "交易哈希无效。");
+    }
+    return value.toLowerCase() as Hex;
+  };
+
+  const issueAgentChallenge = (
+    body: Record<string, unknown>,
+    host: string,
+  ): { message: string; purpose: AgentChallengePurpose } => {
+    requireRegistry();
+    const address = parseAddress(body.address);
+    const purpose = parseChallengePurpose(body.purpose);
+    const issued = issueChallenge({
+      domain: agentOriginOf(host),
+      userId: "agent",
+      address,
+      chainId: opts.config.chain.chainId,
+      now: now(),
+      purpose,
+    });
+    opts.store.putChallenge({
+      sessionId: challengeKey(purpose, address),
+      address,
+      nonce: issued.nonce,
+      message: issued.message,
+      issuedAt: issued.issuedAt,
+      expiresAt: issued.expiresAt,
+    });
+    return { message: issued.message, purpose };
+  };
+
+  const verifyAgentChallenge = async (
+    purpose: AgentChallengePurpose,
+    address: Address,
+    signature: unknown,
+  ): Promise<string> => {
+    const key = challengeKey(purpose, address);
+    const challenge = opts.store.getChallenge(key);
+    if (!challenge) throw new ServiceError(400, "请先获取验证信息。");
+    if (challenge.consumed) {
+      throw new ServiceError(409, "验证信息已使用，请重新发起。");
+    }
+    if (now() > challenge.expiresAt) {
+      throw new ServiceError(400, "验证信息已过期，请重新发起。");
+    }
+    if (challenge.address.toLowerCase() !== address.toLowerCase()) {
+      throw new ServiceError(400, "钱包地址与验证信息不一致。");
+    }
+    const recovered = await recoverBoundAddress(challenge.message, signature);
+    if (recovered.toLowerCase() !== address.toLowerCase()) {
+      throw new ServiceError(400, "签名无效。");
+    }
+    return key;
+  };
+
+  const createAgentDraft = async (
+    body: Record<string, unknown>,
+    host: string,
+  ) => {
+    const { registry } = requireRegistry();
+    const address = parseAddress(body.address);
+    const key = await verifyAgentChallenge("agent-draft", address, body.signature);
+    const role = parseAgentRole(body.role);
+    const profile = validateAgentProfile(body.profile, { allowInsecureLocal });
+    if (
+      opts.store.countOpenAgentDrafts(address) >= MAX_AGENT_DRAFTS_PER_ADDRESS
+    ) {
+      throw new ServiceError(
+        429,
+        `未完成的注册草稿最多 ${MAX_AGENT_DRAFTS_PER_ADDRESS} 个。`,
+      );
+    }
+    opts.store.consumeChallenge(key);
+    const draftId = newDraftId();
+    const agentURI = agentUriFor(agentOriginOf(host), draftId);
+    opts.store.createAgentDraft({
+      draftId,
+      address,
+      role,
+      profile,
+      createdAt: now(),
+    });
+    return {
+      draftId,
+      agentURI,
+      registerTx: {
+        chainId: opts.config.chain.chainId,
+        to: getAddress(registry),
+        data: registerCalldata(agentURI),
+        value: "0",
+      },
+    };
+  };
+
+  const confirmAgent = async (body: Record<string, unknown>, host: string) => {
+    const { chain, registry } = requireRegistry();
+    const txHash = parseTxHash(body.txHash);
+    const receipt = await chain.getFinalizedReceipt(txHash);
+    if (!receipt) return { status: "pending" as const };
+    if (receipt.status !== "success") {
+      throw new ServiceError(400, "注册交易未成功。");
+    }
+    if (!receipt.to || receipt.to.toLowerCase() !== registry.toLowerCase()) {
+      throw new ServiceError(400, "该交易不是身份注册表交易。");
+    }
+    const event = decodeRegisteredEvent(receipt, registry);
+    if (!event) throw new ServiceError(400, "未找到注册事件。");
+    const draftId = parseDraftIdFromUri(event.agentURI, agentOriginOf(host));
+    if (!draftId) throw new ServiceError(400, "注册 URI 与平台不符。");
+    const draft = opts.store.getAgentDraft(draftId);
+    if (!draft) throw new ServiceError(400, "注册 URI 与任何草稿不匹配。");
+    if (draft.address.toLowerCase() !== event.owner.toLowerCase()) {
+      throw new ServiceError(400, "注册事件的所有者与草稿地址不符。");
+    }
+    const ownerOf = await chain.readOwnerOf(event.agentId);
+    if (ownerOf.toLowerCase() !== event.owner.toLowerCase()) {
+      throw new ServiceError(400, "链上所有者与注册事件不符。");
+    }
+    const agentWallet = await chain.readAgentWallet(event.agentId);
+    if (draft.role === "provider" && /^0x0{40}$/i.test(agentWallet)) {
+      throw new ServiceError(400, "服务方必须设置收款地址。");
+    }
+    const record = opts.store.upsertAgent({
+      chainId: opts.config.chain.chainId,
+      agentId: event.agentId.toString(),
+      owner: event.owner,
+      agentWallet,
+      role: draft.role,
+      listed: draft.role === "provider" ? "pending" : "approved",
+      agentUri: event.agentURI,
+      registerTx: txHash,
+      blockNumber: receipt.blockNumber.toString(),
+      createdAt: now(),
+    });
+    opts.store.setDraftRegistered(draftId, event.agentId.toString());
+    return { status: "confirmed" as const, agent: publicAgent(record) };
+  };
+
+  const requestStarterGas = async (body: Record<string, unknown>) => {
+    if (!starterGas) {
+      throw new ServiceError(403, "启动 gas 未开启。");
+    }
+    requireRegistry();
+    const address = parseAddress(body.address);
+    const key = await verifyAgentChallenge("starter-gas", address, body.signature);
+    const grant = await starterGas.grant(address);
+    opts.store.consumeChallenge(key);
+    return grant;
+  };
+
   const toPublicOrder = (
     order: SourceOrder,
     snapshot?: {
@@ -582,6 +829,41 @@ export function createApp(opts: {
         return new Response(readFileSync(filePath), { status: 200, headers });
       }
 
+      const registrationMatch =
+        req.method === "GET"
+          ? /^\/registrations\/([0-9a-f]{32})\.json$/.exec(url.pathname)
+          : null;
+      if (registrationMatch) {
+        requireHost(req);
+        const draft = opts.store.getAgentDraft(registrationMatch[1]!);
+        if (!draft) {
+          return json(404, { error: "找不到该注册文件。" });
+        }
+        const document = buildRegistrationDocument({
+          profile: draft.profile,
+          registrations:
+            draft.registeredAgentId && identityRegistry
+              ? [
+                  {
+                    agentId: draft.registeredAgentId,
+                    agentRegistry: agentRegistryId(
+                      opts.config.chain.chainId,
+                      identityRegistry,
+                    ),
+                  },
+                ]
+              : [],
+        });
+        return new Response(JSON.stringify(document), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            ...securityHeaders(),
+            "Cache-Control": "public, max-age=60",
+          },
+        });
+      }
+
       if (!url.pathname.startsWith("/api/")) {
         requireHost(req);
         return json(404, { error: "找不到该页面。" });
@@ -611,8 +893,59 @@ export function createApp(opts: {
         requireLegacySession(req);
         return json(200, await state(null));
       }
+      if (req.method === "GET" && url.pathname === "/api/agents") {
+        requireRegistry();
+        const roleParam = url.searchParams.get("role");
+        const listedParam = url.searchParams.get("listed");
+        const filter: { role?: AgentRole; listed?: ListedStatus } = {};
+        if (roleParam != null && roleParam !== "") {
+          if (!isAgentRole(roleParam)) {
+            throw new ServiceError(400, "代理角色无效。");
+          }
+          filter.role = roleParam;
+        }
+        if (listedParam != null && listedParam !== "") {
+          if (!isListedStatus(listedParam)) {
+            throw new ServiceError(400, "上架状态无效。");
+          }
+          filter.listed = listedParam;
+        }
+        return json(200, {
+          agents: opts.store.listAgents(filter).map(publicAgent),
+        });
+      }
+      const agentIdMatch =
+        req.method === "GET" ? /^\/api\/agents\/([0-9]+)$/.exec(url.pathname) : null;
+      if (agentIdMatch) {
+        requireRegistry();
+        const record = opts.store.getAgent(
+          opts.config.chain.chainId,
+          agentIdMatch[1]!,
+        );
+        if (!record) throw new ServiceError(404, "找不到该代理。");
+        return json(200, { agent: publicAgent(record) });
+      }
       if (req.method !== "POST")
         return json(405, { error: "不支持的请求方法。" });
+
+      // Public agent routes: a wallet signature is the identity, so no session
+      // and no Origin header are required. They are handled before the
+      // session-gated mutations below.
+      if (url.pathname === "/api/agents/challenge") {
+        return json(200, issueAgentChallenge(await readJson(req), requireHost(req)));
+      }
+      if (url.pathname === "/api/agents/drafts") {
+        return json(200, await createAgentDraft(await readJson(req), requireHost(req)));
+      }
+      if (url.pathname === "/api/agents/confirm") {
+        const result = await confirmAgent(await readJson(req), requireHost(req));
+        return json(result.status === "pending" ? 202 : 200, result);
+      }
+      if (url.pathname === "/api/agents/starter-gas") {
+        requireHost(req);
+        const grant = await requestStarterGas(await readJson(req));
+        return json(grant.status === "confirmed" ? 200 : 202, grant);
+      }
 
       if (url.pathname === "/api/auth/login") {
         if (!authEnabled) return json(404, { error: "找不到该接口。" });

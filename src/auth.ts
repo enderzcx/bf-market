@@ -211,6 +211,10 @@ export function parseAddress(value: unknown): Address {
   return getAddress(value) as Address;
 }
 
+// A challenge is bound to its purpose so a signature gathered for one flow can
+// never be replayed in another (wallet binding, agent draft, starter gas).
+export type ChallengePurpose = 'wallet-binding' | 'agent-draft' | 'starter-gas';
+
 export function challengeMessage(input: {
   domain: string;
   userId: string;
@@ -219,9 +223,13 @@ export function challengeMessage(input: {
   chainId: number;
   issuedAt: number;
   expiresAt: number;
+  purpose?: ChallengePurpose;
 }): string {
-  return [
-    'Settlement wallet binding',
+  const lines = ['Settlement wallet binding'];
+  if (input.purpose && input.purpose !== 'wallet-binding') {
+    lines.push(`Purpose: ${input.purpose}`);
+  }
+  lines.push(
     `Domain: ${input.domain}`,
     `User: ${input.userId}`,
     `Address: ${input.address}`,
@@ -229,7 +237,8 @@ export function challengeMessage(input: {
     `Chain ID: ${input.chainId}`,
     `Issued at: ${new Date(input.issuedAt).toISOString()}`,
     `Expires at: ${new Date(input.expiresAt).toISOString()}`,
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 export function issueChallenge(input: {
@@ -238,6 +247,7 @@ export function issueChallenge(input: {
   address: Address;
   chainId: number;
   now: number;
+  purpose?: ChallengePurpose;
 }) {
   const nonce = `0x${crypto.randomUUID().replaceAll('-', '')}`;
   const issuedAt = input.now;

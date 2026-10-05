@@ -78,6 +78,7 @@ export async function assertNetworkPreflight(input: {
   const contracts: Array<[string, Address | undefined]> = [
     ['Permit2', profile.permit2],
     ['x402 Permit2 代理', profile.x402Permit2Proxy],
+    ['身份注册表', profile.identityRegistry],
   ];
   for (const [label, address] of contracts) {
     if (!address) continue;
