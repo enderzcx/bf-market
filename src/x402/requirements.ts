@@ -1,10 +1,6 @@
 import { getAddress } from "viem";
-import {
-  CIRCLE_FUJI_USDC,
-  X402_MAX_TIMEOUT_SECONDS,
-  X402_NETWORK,
-  type RuntimeConfig,
-} from "../config.ts";
+import { X402_MAX_TIMEOUT_SECONDS, type RuntimeConfig } from "../config.ts";
+import { NETWORK_PROFILES } from "../network.ts";
 import { ServiceError } from "../types.ts";
 import {
   PAYMENT_MINOR_ATOMIC_FACTOR,
@@ -32,7 +28,7 @@ export function canonicalPaymentUrl(
 }
 
 export function x402Asset(): `0x${string}` {
-  return getAddress(CIRCLE_FUJI_USDC) as `0x${string}`;
+  return getAddress(NETWORK_PROFILES.fuji.asset.address) as `0x${string}`;
 }
 
 export function x402PayTo(config: RuntimeConfig): `0x${string}` {
@@ -43,10 +39,11 @@ export function buildPaymentRequirements(input: {
   amount: string;
   asset: string;
   payTo: string;
+  network?: string;
 }): X402PaymentRequirements {
   return {
     scheme: X402_SCHEME,
-    network: X402_NETWORK,
+    network: input.network ?? NETWORK_PROFILES.fuji.caip2,
     amount: input.amount,
     asset: getAddress(input.asset),
     payTo: getAddress(input.payTo),
@@ -64,6 +61,7 @@ export function buildPaymentRequired(input: {
   amount: string;
   asset: string;
   payTo: string;
+  network?: string;
   error?: string;
 }): X402PaymentRequired {
   return {
@@ -79,6 +77,7 @@ export function buildPaymentRequired(input: {
         amount: input.amount,
         asset: input.asset,
         payTo: input.payTo,
+        network: input.network,
       }),
     ],
   };
@@ -89,11 +88,12 @@ export function buildSettleResponse(input: {
   transaction: string;
   payer?: string;
   errorReason?: string;
+  network?: string;
 }): X402SettleResponse {
   const body: X402SettleResponse = {
     success: input.success,
     transaction: input.transaction,
-    network: X402_NETWORK,
+    network: input.network ?? NETWORK_PROFILES.fuji.caip2,
   };
   if (input.payer) body.payer = input.payer;
   if (input.errorReason) body.errorReason = input.errorReason;

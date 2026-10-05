@@ -79,6 +79,7 @@ export function createX402Service(opts: {
       amount: row.amount,
       asset: row.asset,
       payTo: row.payTo,
+      network: opts.config.network.caip2,
     });
 
   const ensureOrder = async (requestId: string): Promise<{
@@ -120,6 +121,7 @@ export function createX402Service(opts: {
             success: true,
             transaction: row.txHash ?? "",
             payer,
+            network: opts.config.network.caip2,
           }),
         ),
       },
@@ -142,6 +144,7 @@ export function createX402Service(opts: {
           amount: row.amount,
           asset: row.asset,
           payTo: row.payTo,
+          network: opts.config.network.caip2,
         }),
       ),
     },
@@ -186,7 +189,7 @@ export function createX402Service(opts: {
     candidate: Hex | null,
   ): Promise<Hex> => {
     const chainId = await opts.chain.getChainId();
-    if (chainId !== 43113) {
+    if (chainId !== opts.config.network.chainId) {
       throw new ServiceError(502, "付款未完成。");
     }
     if (candidate) {
@@ -318,7 +321,7 @@ export function createX402Service(opts: {
         });
         const pinned = opts.store.pinX402Authorization({
           requestId: existing.requestId,
-          chainId: 43113,
+          chainId: opts.config.network.chainId,
           token: existing.asset,
           payer: validated.payload.authorization.from,
           nonce: validated.payload.authorization.nonce,

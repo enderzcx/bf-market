@@ -15,6 +15,7 @@ import {
   type TransactionSerialized,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { NETWORK_PROFILES, profileForChainId } from "./network.ts";
 export type Payout = {
   id: `0x${string}`;
   recipient: `0x${string}`;
@@ -46,12 +47,12 @@ const tokenAbi = parseAbi([
 ]);
 export type EvmConfig = {
   rpcUrl: string;
-  chainId: 43113 | 31337;
+  chainId: number;
   contract: `0x${string}`;
   token: `0x${string}`;
   privateKey: `0x${string}`;
 };
-export const FUJI_USDC = "0x5425890298aed601595a70AB815c96711a31Bc65" as const;
+export const FUJI_USDC = NETWORK_PROFILES.fuji.asset.address;
 const LOCAL_TEST_KEYS = [1, 2].map(
   (n) => `0x${n.toString(16).padStart(64, "0")}`,
 );
@@ -62,19 +63,19 @@ export class EvmChain implements Chain {
   readonly walletClient;
   readonly account;
   constructor(readonly config: EvmConfig) {
-    if (![43113, 31337].includes(config.chainId))
-      throw new Error("Only Fuji and local testnet allowed");
+    const profile = profileForChainId(config.chainId);
+    if (!profile) throw new Error("Unknown settlement network");
     if (
-      config.chainId === 31337 &&
+      profile.name === "local" &&
       !["localhost", "127.0.0.1", "[::1]"].includes(
         new URL(config.rpcUrl).hostname,
       )
     )
       throw new Error("Local chain RPC must be loopback");
-    if (config.chainId === 43113 && !same(config.token, FUJI_USDC))
+    if (profile.name === "fuji" && !same(config.token, profile.asset.address))
       throw new Error("Fuji requires Circle test USDC");
     if (
-      config.chainId === 43113 &&
+      profile.name === "fuji" &&
       (LOCAL_TEST_KEYS.includes(config.privateKey.toLowerCase()) ||
         config.privateKey.toLowerCase() ===
           "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
@@ -108,14 +109,15 @@ export class EvmChain implements Chain {
     });
     if (!same(token, this.config.token))
       throw new Error("Settlement token mismatch");
+    const decimals = profileForChainId(this.config.chainId)?.asset.decimals;
     if (
       (await this.publicClient.readContract({
         address: this.config.token,
         abi: tokenAbi,
         functionName: "decimals",
-      })) !== 6
+      })) !== decimals
     )
-      throw new Error("Expected 6 decimal test token");
+      throw new Error(`Expected ${decimals} decimal test token`);
   }
   async prepare(p: Payout): Promise<Prepared> {
     await this.validate();
@@ -208,7 +210,7 @@ export class EvmChain implements Chain {
       blockNumber: receipt.blockNumber,
     });
     if (block.hash !== receipt.blockHash) return "pending";
-    if (this.config.chainId === 43113) {
+    if (profileForChainId(this.config.chainId)?.finality.kind === "finalized") {
       const finalized = await this.publicClient.getBlock({
         blockTag: "finalized",
       });
@@ -251,7 +253,7 @@ export class EvmChain implements Chain {
     }
     if (!paid || !transfer)
       throw new Error("Missing matching payout and token transfer evidence");
-    return "confirmed"; // Fuji finalized block; local testnet canonical included block.
+    return "confirmed"; // profile finality: finalized block or canonical inclusion.
   }
   async balances() {
     await this.validate();

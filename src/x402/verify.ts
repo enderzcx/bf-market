@@ -6,6 +6,7 @@ import {
   parseAbi,
   type TransactionReceipt,
 } from "viem";
+import { profileForChainId } from "../network.ts";
 import type { Address, Hex } from "../types.ts";
 import {
   X402_SCAN_CHUNK,
@@ -55,8 +56,9 @@ export function receiptMatchesPayment(input: {
 
 export function createRpcX402Chain(input: {
   rpcUrl: string;
-  chainId: 43113 | 31337;
+  chainId: number;
 }): X402Chain {
+  const finalized = profileForChainId(input.chainId)?.finality.kind === "finalized";
   const chain = defineChain({
     id: input.chainId,
     name: "x402 verify network",
@@ -78,9 +80,12 @@ export function createRpcX402Chain(input: {
     }
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     if (block.hash !== receipt.blockHash) return { ok: false, reason: "pending" };
-    if (input.chainId === 43113) {
-      const finalized = await client.getBlock({ blockTag: "finalized" });
-      if (finalized.number === null || finalized.number < receipt.blockNumber) {
+    if (finalized) {
+      const finalizedBlock = await client.getBlock({ blockTag: "finalized" });
+      if (
+        finalizedBlock.number === null ||
+        finalizedBlock.number < receipt.blockNumber
+      ) {
         return { ok: false, reason: "pending" };
       }
     }

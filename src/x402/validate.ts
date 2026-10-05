@@ -1,5 +1,6 @@
 import { getAddress, isAddress, isHex, recoverTypedDataAddress } from "viem";
-import { X402_MAX_TIMEOUT_SECONDS, X402_NETWORK } from "../config.ts";
+import { X402_MAX_TIMEOUT_SECONDS } from "../config.ts";
+import { chainIdFromCaip2 } from "../network.ts";
 import { ServiceError } from "../types.ts";
 import type { Address, Hex } from "../types.ts";
 import { canonicalPaymentUrl } from "./requirements.ts";
@@ -105,7 +106,7 @@ function parseAccepted(
   }
   if (
     scheme !== X402_SCHEME ||
-    network !== X402_NETWORK ||
+    network !== expected.network ||
     amount !== expected.amount ||
     !sameAddress(asset, expected.asset) ||
     !sameAddress(payTo, expected.payTo)
@@ -132,7 +133,7 @@ function parseAccepted(
   }
   return {
     scheme: X402_SCHEME,
-    network: X402_NETWORK,
+    network: expected.network,
     amount,
     asset,
     payTo,
@@ -199,7 +200,7 @@ export async function validatePaymentPayload(input: {
       domain: {
         name: X402_TOKEN_NAME,
         version: X402_TOKEN_VERSION,
-        chainId: 43113,
+        chainId: chainIdFromCaip2(input.requirements.network),
         verifyingContract: input.requirements.asset as Address,
       },
       types: AUTHORIZATION_TYPES,

@@ -1,16 +1,23 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { getAddress, isAddress, isHex, keccak256, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { DEFAULT_MIN_AMOUNT } from './money.ts';
+import {
+  NETWORK_PROFILES,
+  NETWORK_NAMES,
+  profileForChainId,
+  selectNetworkByName,
+  type NetworkProfile,
+} from './network.ts';
 import type { Address, Hex, SourceKind } from './types.ts';
 import { ServiceError } from './types.ts';
 
 export const AUTH_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 export const AUTH_COOKIE_MAX_AGE_SEC = 8 * 60 * 60;
 
-export const CIRCLE_FUJI_USDC =
-  '0x5425890298aed601595a70AB815c96711a31Bc65' as Address;
+export const CIRCLE_FUJI_USDC = NETWORK_PROFILES.fuji.asset.address;
+export const X402_NETWORK = NETWORK_PROFILES.fuji.caip2;
 export const MERCHANT_ID = 'demo-merchant';
 export const PARTNER_ID = 'demo-partner';
 export const PARTNER_NAME = '演示推广者';
@@ -20,23 +27,36 @@ export const DEFAULT_MATURITY_MS = 60_000;
 export const CHALLENGE_TTL_MS = 5 * 60_000;
 export const BODY_LIMIT = 16 * 1024;
 export const DEFAULT_X402_FACILITATOR_URL = 'https://facilitator.payai.network';
-export const X402_NETWORK = 'eip155:43113' as const;
 export const X402_MAX_TIMEOUT_SECONDS = 300;
 export const X402_HEADER_LIMIT = 8 * 1024;
 
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
+
+export type ChainConfigInput = {
+  rpcUrl: string;
+  chainId: number;
+  contract?: Address;
+  token: Address;
+  privateKey?: Hex;
+  recipient?: Address;
+};
+
 export type ChainConfig = {
   rpcUrl: string;
-  chainId: 43113 | 31337;
+  chainId: number;
   contract: Address;
   token: Address;
-  privateKey: Hex;
+  privateKey?: Hex;
   recipient?: Address;
 };
 
 export type RuntimeConfig = {
   host: string;
   port: number;
+  network: NetworkProfile;
   chain: ChainConfig;
+  payoutsEnabled: boolean;
+  payoutsDisabledReason: string | null;
   source: SourceKind;
   beefapiBaseUrl: string;
   beefapiToken: string;
@@ -77,28 +97,20 @@ export function originOf(host: string, port: number): string {
 }
 
 export function networkMeta(
-  chainId: 43113 | 31337,
+  chainId: number,
   token: string,
   extra?: { configured?: boolean; error?: string },
 ) {
   const configured = extra?.configured ?? true;
   const error = extra?.error;
-  const base =
-    chainId === 43113
-      ? {
-          name: 'Avalanche Fuji',
-          chainId,
-          explorer: 'https://testnet.snowtrace.io',
-          configured,
-          token,
-        }
-      : {
-          name: 'Local testnet',
-          chainId,
-          explorer: '',
-          configured,
-          token,
-        };
+  const profile = profileForChainId(chainId);
+  const base = {
+    name: profile?.displayName ?? `Chain ${chainId}`,
+    chainId,
+    explorer: profile?.explorerUrl ?? '',
+    configured,
+    token,
+  };
   return error ? { ...base, error } : base;
 }
 
@@ -107,7 +119,11 @@ export function executorAddress(privateKey: Hex): Address {
 }
 
 export function runtimeFingerprint(config: RuntimeConfig, executor?: Address): string {
-  const exec = executor ?? executorAddress(config.chain.privateKey);
+  const exec =
+    executor ??
+    (config.chain.privateKey
+      ? executorAddress(config.chain.privateKey)
+      : undefined);
   return keccak256(
     toHex(
       [
@@ -118,7 +134,7 @@ export function runtimeFingerprint(config: RuntimeConfig, executor?: Address): s
         String(config.chain.chainId),
         getAddress(config.chain.token),
         getAddress(config.chain.contract),
-        getAddress(exec),
+        exec ? getAddress(exec) : '',
       ].join('|'),
     ),
   );
@@ -138,7 +154,7 @@ function requiredKey(value: unknown, label: string): Hex {
   return value.toLowerCase() as Hex;
 }
 
-function requiredRpc(value: unknown, chainId: 43113 | 31337): string {
+function requiredRpc(value: unknown, profile: NetworkProfile): string {
   if (typeof value !== 'string' || !/^https?:\/\//i.test(value)) {
     throw new Error('必须提供明确的 RPC 地址。');
   }
@@ -148,7 +164,7 @@ function requiredRpc(value: unknown, chainId: 43113 | 31337): string {
   } catch {
     throw new Error('RPC 地址无效。');
   }
-  if (chainId === 31337 && !isLoopbackHost(url.hostname)) {
+  if (profile.name === 'local' && !isLoopbackHost(url.hostname)) {
     throw new Error('本地链 RPC 必须是本机回环地址。');
   }
   return value;
@@ -165,6 +181,18 @@ function flagEnv(value: string | undefined, label: string): boolean {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error(`${label} 只允许 true 或 false。`);
+}
+
+function namespacePath(path: string, profile: NetworkProfile): string {
+  // Fuji keeps the original database/lock path so existing deployments still
+  // find their ledger. Every other network gets a suffix.
+  if (profile.name === 'fuji') return path;
+  const dir = dirname(path);
+  const file = basename(path);
+  const dot = file.lastIndexOf('.');
+  const stem = dot > 0 ? file.slice(0, dot) : file;
+  const ext = dot > 0 ? file.slice(dot) : '';
+  return join(dir, `${stem}.${profile.name}${ext}`);
 }
 
 export function assertSupportedPasswordHash(value: unknown, label: string): string {
@@ -230,15 +258,45 @@ export function parsePublicOrigin(value: string): string {
   return url.origin;
 }
 
-export function runtimeConfig(
-  partial: Partial<RuntimeConfig> & { chain: ChainConfig },
-): RuntimeConfig {
+export type RuntimeConfigInput = Omit<Partial<RuntimeConfig>, 'chain'> & {
+  chain: ChainConfigInput;
+};
+
+export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
   const host = partial.host ?? '127.0.0.1';
   assertLoopbackBind(host);
   const chainId = partial.chain.chainId;
-  if (chainId !== 31337 && chainId !== 43113) {
-    throw new Error('只允许本地测试链 31337 或 Fuji 43113。');
+  const profile = profileForChainId(chainId);
+  if (!profile) {
+    throw new Error(
+      `未配置已知结算网络，拒绝启动。请设置 SETTLEMENT_NETWORK（${NETWORK_NAMES.join(' | ')}）。`,
+    );
   }
+  const token = requiredAddress(partial.chain.token, '代币');
+
+  const hasContract =
+    partial.chain.contract != null &&
+    partial.chain.contract !== ZERO_ADDRESS;
+  let contract: Address;
+  let privateKey: Hex | undefined;
+  if (profile.payoutsRequired) {
+    contract = requiredAddress(partial.chain.contract, '结算合约');
+    privateKey = requiredKey(partial.chain.privateKey, '执行钱包私钥');
+  } else if (hasContract) {
+    contract = requiredAddress(partial.chain.contract, '结算合约');
+    privateKey = requiredKey(partial.chain.privateKey, '执行钱包私钥');
+  } else {
+    contract = ZERO_ADDRESS;
+    privateKey =
+      partial.chain.privateKey != null
+        ? requiredKey(partial.chain.privateKey, '执行钱包私钥')
+        : undefined;
+  }
+  const payoutsEnabled = profile.payoutsRequired || hasContract;
+  const payoutsDisabledReason = payoutsEnabled
+    ? null
+    : `该网络（${profile.displayName}）未配置 Settlement 出款合约，出款 worker 未启动。`;
+
   const source = partial.source ?? 'fixture';
   const orderDemo = partial.orderDemo ?? false;
   const partnerUserId = partial.partnerUserId ?? 1;
@@ -277,7 +335,7 @@ export function runtimeConfig(
   }
   if (publicOrigin) {
     parsePublicOrigin(publicOrigin);
-    if (chainId !== 43113) {
+    if (profile.name !== 'fuji') {
       throw new Error('公开来源只允许 Fuji 测试网。');
     }
     if (source !== 'beefapi' || !orderDemo) {
@@ -285,23 +343,31 @@ export function runtimeConfig(
     }
   }
   if (x402Enabled) {
-    if (chainId !== 43113 || source !== 'beefapi' || !orderDemo) {
-      throw new Error('x402 测试付款只适用于 Fuji 订单演示。');
+    if (source !== 'beefapi' || !orderDemo) {
+      throw new Error('x402 测试付款只适用于 beefapi 订单演示。');
+    }
+    if (!profile.asset.transferMethods.includes('eip3009')) {
+      throw new Error(
+        `该网络的 x402 付款方式尚未支持（${profile.displayName} 不支持 EIP-3009；x402 测试付款只适用于 Fuji）。`,
+      );
     }
   }
   return {
     host,
     port: partial.port ?? DEFAULT_PORT,
+    network: profile,
     chain: {
-      ...partial.chain,
+      rpcUrl: partial.chain.rpcUrl,
       chainId,
-      contract: requiredAddress(partial.chain.contract, '结算合约'),
-      token: requiredAddress(partial.chain.token, '代币'),
-      privateKey: requiredKey(partial.chain.privateKey, '执行钱包私钥'),
+      contract,
+      token,
+      privateKey,
       recipient: partial.chain.recipient
         ? requiredAddress(partial.chain.recipient, '测试收款地址')
         : undefined,
     },
+    payoutsEnabled,
+    payoutsDisabledReason,
     source,
     orderDemo,
     beefapiBaseUrl: partial.beefapiBaseUrl ?? '',
@@ -310,8 +376,14 @@ export function runtimeConfig(
     minAmount: partial.minAmount ?? DEFAULT_MIN_AMOUNT,
     maturityMs: partial.maturityMs ?? DEFAULT_MATURITY_MS,
     tickMs: partial.tickMs ?? DEFAULT_TICK_MS,
-    dbPath: partial.dbPath ?? join('.local', 'settlement.sqlite'),
-    lockPath: partial.lockPath ?? join('.local', 'settlement.lock'),
+    dbPath: namespacePath(
+      partial.dbPath ?? join('.local', 'settlement.sqlite'),
+      profile,
+    ),
+    lockPath: namespacePath(
+      partial.lockPath ?? join('.local', 'settlement.lock'),
+      profile,
+    ),
     publicDir: partial.publicDir ?? join(import.meta.dir, '../web/dist'),
     merchantId: partial.merchantId ?? MERCHANT_ID,
     partnerId: partial.partnerId ?? PARTNER_ID,
@@ -346,38 +418,78 @@ export function loadConfig(opts?: {
     }
   }
 
+  const selector = env.SETTLEMENT_NETWORK;
   const chainIdRaw = env.SETTLEMENT_CHAIN_ID ?? file?.chainId;
-  const chainId = Number(chainIdRaw);
-  if (chainId !== 31337 && chainId !== 43113) {
-    throw new Error(
-      '未配置结算链，拒绝以模拟出款启动。请提供 .local/chain.json 或 Fuji 环境变量（仅 31337/43113）。',
-    );
-  }
-
-  const rpcUrl = requiredRpc(env.SETTLEMENT_RPC_URL ?? file?.rpcUrl, chainId);
-  const contract = requiredAddress(
-    env.SETTLEMENT_CONTRACT ?? file?.contract,
-    '结算合约',
-  );
-  const token = requiredAddress(env.SETTLEMENT_TOKEN ?? file?.token, '代币');
-
-  if (chainId === 43113 && getAddress(token) !== getAddress(CIRCLE_FUJI_USDC)) {
-    throw new Error(
-      `Fuji 代币必须固定为 Circle 官方测试 USDC ${CIRCLE_FUJI_USDC}。`,
-    );
-  }
-
-  let privateKey: Hex;
-  if (chainId === 43113) {
-    if (!env.SETTLEMENT_PRIVATE_KEY) {
-      throw new Error('Fuji 执行钱包私钥只能通过 SETTLEMENT_PRIVATE_KEY 提供，不能写在配置文件里。');
+  let profile: NetworkProfile;
+  if (selector != null && selector !== '') {
+    profile = selectNetworkByName(selector);
+    if (
+      chainIdRaw != null &&
+      chainIdRaw !== '' &&
+      Number(chainIdRaw) !== profile.chainId
+    ) {
+      throw new Error(
+        `SETTLEMENT_NETWORK=${selector} 与 SETTLEMENT_CHAIN_ID=${chainIdRaw} 冲突。`,
+      );
     }
-    privateKey = requiredKey(env.SETTLEMENT_PRIVATE_KEY, '执行钱包私钥');
   } else {
-    privateKey = requiredKey(
-      env.SETTLEMENT_PRIVATE_KEY ?? file?.privateKey,
-      '执行钱包私钥',
+    const byChainId = profileForChainId(Number(chainIdRaw));
+    if (!byChainId) {
+      throw new Error(
+        `未配置结算链，拒绝以模拟出款启动。请设置 SETTLEMENT_NETWORK（${NETWORK_NAMES.join(' | ')}）或提供 .local/chain.json。`,
+      );
+    }
+    profile = byChainId;
+  }
+
+  const rpcUrl = requiredRpc(
+    env.SETTLEMENT_RPC_URL ?? file?.rpcUrl ?? profile.rpcUrl,
+    profile,
+  );
+  const token = requiredAddress(
+    env.SETTLEMENT_TOKEN ?? file?.token ?? profile.asset.address,
+    '代币',
+  );
+
+  if (profile.name !== 'local' && getAddress(token) !== getAddress(profile.asset.address)) {
+    throw new Error(
+      `${profile.displayName} 代币必须固定为 ${profile.asset.symbol} ${profile.asset.address}。`,
     );
+  }
+
+  let contract: Address | undefined;
+  let privateKey: Hex | undefined;
+  if (profile.payoutsRequired) {
+    contract = requiredAddress(
+      env.SETTLEMENT_CONTRACT ?? file?.contract,
+      '结算合约',
+    );
+    if (profile.name === 'fuji') {
+      if (!env.SETTLEMENT_PRIVATE_KEY) {
+        throw new Error('Fuji 执行钱包私钥只能通过 SETTLEMENT_PRIVATE_KEY 提供，不能写在配置文件里。');
+      }
+      privateKey = requiredKey(env.SETTLEMENT_PRIVATE_KEY, '执行钱包私钥');
+    } else {
+      privateKey = requiredKey(
+        env.SETTLEMENT_PRIVATE_KEY ?? file?.privateKey,
+        '执行钱包私钥',
+      );
+    }
+  } else {
+    const contractRaw = env.SETTLEMENT_CONTRACT ?? file?.contract;
+    if (contractRaw != null && contractRaw !== '') {
+      contract = requiredAddress(contractRaw, '结算合约');
+      privateKey = requiredKey(
+        env.SETTLEMENT_PRIVATE_KEY ?? file?.privateKey,
+        '执行钱包私钥',
+      );
+    } else {
+      contract = undefined;
+      privateKey =
+        env.SETTLEMENT_PRIVATE_KEY != null && env.SETTLEMENT_PRIVATE_KEY !== ''
+          ? requiredKey(env.SETTLEMENT_PRIVATE_KEY, '执行钱包私钥')
+          : undefined;
+    }
   }
 
   const recipientRaw = env.SETTLEMENT_RECIPIENT ?? file?.recipient;
@@ -404,7 +516,7 @@ export function loadConfig(opts?: {
     port: intEnv(env.SETTLEMENT_PORT, DEFAULT_PORT, 'SETTLEMENT_PORT'),
     chain: {
       rpcUrl,
-      chainId,
+      chainId: profile.chainId,
       contract,
       token,
       privateKey,
@@ -457,7 +569,7 @@ export function loadConfig(opts?: {
 }
 
 export function demoWalletAddress(config: RuntimeConfig): Address {
-  if (config.chain.chainId !== 31337) {
+  if (config.network.name !== 'local') {
     throw new ServiceError(403, '当前网络不能使用本地测试钱包。');
   }
   if (!config.chain.recipient) {

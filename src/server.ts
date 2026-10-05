@@ -28,8 +28,6 @@ import {
   AUTH_SESSION_TTL_MS,
   assertLoopbackBind,
   BODY_LIMIT,
-  CIRCLE_FUJI_USDC,
-  X402_NETWORK,
   demoWalletAddress,
   loadConfig,
   networkMeta,
@@ -39,6 +37,7 @@ import {
   type RuntimeConfig,
 } from "./config.ts";
 import { acquireProcessLock } from "./lock.ts";
+import { assertNetworkPreflight, rpcPreflightClient } from "./preflight.ts";
 import { parseAmount } from "./money.ts";
 import {
   commissionFromBalances,
@@ -161,10 +160,13 @@ async function loadEvmChain(config: RuntimeConfig): Promise<Chain> {
   if (!existsSync(path)) {
     throw new Error("缺少 src/chain.ts 链适配，拒绝以模拟出款启动。");
   }
+  if (!config.chain.privateKey) {
+    throw new Error("缺少执行钱包私钥，拒绝启动出款。");
+  }
   const mod = (await import(pathToFileURL(path).href)) as {
     EvmChain: new (c: {
       rpcUrl: string;
-      chainId: 43113 | 31337;
+      chainId: number;
       contract: `0x${string}`;
       token: `0x${string}`;
       privateKey: `0x${string}`;
@@ -177,6 +179,19 @@ async function loadEvmChain(config: RuntimeConfig): Promise<Chain> {
     token: config.chain.token,
     privateKey: config.chain.privateKey,
   });
+}
+
+function createDisabledChain(config: RuntimeConfig): Chain {
+  const reason = config.payoutsDisabledReason ?? "出款未启用。";
+  const blocked = async (): Promise<never> => {
+    throw new ServiceError(503, reason);
+  };
+  return {
+    prepare: blocked,
+    broadcast: blocked,
+    inspect: blocked,
+    balances: blocked,
+  };
 }
 
 export function createApp(opts: {
@@ -497,8 +512,8 @@ export function createApp(opts: {
       orderDemo,
       x402: {
         enabled: x402Enabled,
-        network: X402_NETWORK,
-        asset: CIRCLE_FUJI_USDC,
+        network: opts.config.network.caip2,
+        asset: opts.config.network.asset.address,
         payTo: opts.config.chain.contract,
       },
       ...(authEnabled ? { authEnabled: true, role: role ?? undefined } : {}),
@@ -536,7 +551,12 @@ export function createApp(opts: {
         if (!healthzHostAllowed(host, opts.config.port, publicOrigin)) {
           throw new ServiceError(403, "请求主机不被允许。");
         }
-        return json(200, { ok: true });
+        if (opts.config.payoutsEnabled) return json(200, { ok: true });
+        return json(200, {
+          ok: true,
+          payouts: "disabled",
+          network: opts.config.network.name,
+        });
       }
       const staticFile = req.method === "GET" ? staticFileFor(url.pathname) : null;
       if (staticFile) {
@@ -787,11 +807,27 @@ export async function startFromEnv(env = process.env, options: { handleSignals?:
       partnerName: config.partnerName,
       fingerprint,
     });
-    const chain = await loadEvmChain(config);
-    try {
-      await chain.balances();
-    } catch {
-      throw new Error("结算链未就绪，拒绝启动。");
+    if (config.network.name !== "local") {
+      await assertNetworkPreflight({
+        profile: config.network,
+        rpc: rpcPreflightClient({
+          rpcUrl: config.chain.rpcUrl,
+          chainId: config.network.chainId,
+        }),
+        token: config.chain.token,
+      });
+    }
+    const chain = config.payoutsEnabled
+      ? await loadEvmChain(config)
+      : createDisabledChain(config);
+    if (config.payoutsEnabled) {
+      try {
+        await chain.balances();
+      } catch {
+        throw new Error("结算链未就绪，拒绝启动。");
+      }
+    } else {
+      console.warn(`[settlement] ${config.payoutsDisabledReason}`);
     }
     const source = createSource(store, config);
     const worker = createWorker({ store, chain, source, config });
@@ -801,8 +837,10 @@ export async function startFromEnv(env = process.env, options: { handleSignals?:
       port: config.port,
       fetch: app.fetch,
     });
-    worker.start();
-    void worker.tick().catch(() => {});
+    if (config.payoutsEnabled) {
+      worker.start();
+      void worker.tick().catch(() => {});
+    }
     let shuttingDown: Promise<void> | undefined;
     const shutdown = () =>
       (shuttingDown ??= (async () => {

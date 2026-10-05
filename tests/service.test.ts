@@ -568,7 +568,7 @@ describe('process lock and config', () => {
           SETTLEMENT_PRIVATE_KEY: KEY,
         },
       }),
-    ).toThrow(/Circle/);
+    ).toThrow(/代币必须固定为 USDC/);
     expect(() =>
       loadConfig({
         cwd: dir,

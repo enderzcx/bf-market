@@ -14,7 +14,7 @@ export const PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
 export const PAYMENT_RESPONSE_HEADER = "PAYMENT-RESPONSE";
 
-export type X402Network = "eip155:43113";
+export type X402Network = string;
 
 export type X402ResourceInfo = {
   url: string;

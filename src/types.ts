@@ -49,7 +49,7 @@ export type PublicX402Payment = {
 
 export type PublicX402Config = {
   enabled: boolean;
-  network: 'eip155:43113';
+  network: string;
   asset: string;
   payTo: string;
 };
