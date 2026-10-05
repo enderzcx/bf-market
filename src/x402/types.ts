@@ -30,8 +30,8 @@ export type X402PaymentRequirements = {
   payTo: string;
   maxTimeoutSeconds: number;
   extra: {
-    name: string;
-    version: string;
+    name?: string;
+    version?: string;
     assetTransferMethod?: string;
     paymentFlow?: string;
     [key: string]: unknown;
@@ -64,6 +64,34 @@ export type X402PaymentPayload = {
   resource?: X402ResourceInfo;
   accepted: X402PaymentRequirements;
   payload: X402ExactPayload;
+};
+
+// Permit2 exact-scheme payload. Field names match @x402/evm so an official
+// client's payload verifies unchanged.
+export type X402Permit2Witness = {
+  to: Address;
+  validAfter: string;
+};
+
+export type X402Permit2Authorization = {
+  from: Address;
+  permitted: { token: Address; amount: string };
+  spender: Address;
+  nonce: string;
+  deadline: string;
+  witness: X402Permit2Witness;
+};
+
+export type X402Permit2Payload = {
+  signature: Hex;
+  permit2Authorization: X402Permit2Authorization;
+};
+
+export type X402Permit2PaymentPayload = {
+  x402Version: number;
+  resource?: X402ResourceInfo;
+  accepted: X402PaymentRequirements;
+  payload: X402Permit2Payload;
 };
 
 export type X402SettleResponse = {

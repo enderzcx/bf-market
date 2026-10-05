@@ -95,6 +95,34 @@ export type X402PaymentStatus =
   | 'completed'
   | 'blocked';
 
+// Lifecycle of a Permit2-settled paid service call, keyed by the signed
+// payment authorization so the same payload can only be delivered once.
+export type ServicePaymentStatus =
+  | 'required'
+  | 'verified'
+  | 'settling'
+  | 'settled'
+  | 'delivered'
+  | 'failed';
+
+export type ServicePaymentRecord = {
+  paymentKey: Hex;
+  serviceId: string;
+  chainId: number;
+  payer: Address;
+  payTo: Address;
+  asset: Address;
+  amount: string;
+  nonce: string;
+  status: ServicePaymentStatus;
+  txHash: Hex | null;
+  journal: Hex | null;
+  resultJson: string | null;
+  error: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type PublicX402Payment = {
   mode: 'x402';
   status: X402PaymentStatus;

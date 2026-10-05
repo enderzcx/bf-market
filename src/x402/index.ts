@@ -21,6 +21,15 @@ export { createHttpFacilitator } from "./facilitator.ts";
 export { createRpcX402Chain, receiptMatchesPayment } from "./verify.ts";
 export { createX402Service } from "./service.ts";
 export type { X402PayResult } from "./service.ts";
+export {
+  createRpcPermit2Facilitator,
+  permit2PaymentKey,
+  permit2ReceiptMatches,
+  PERMIT2,
+} from "./permit2.ts";
+export type { Permit2Facilitator, Permit2ReceiptResult } from "./permit2.ts";
+export { createPermit2Service, parsePermit2Payload } from "./permit2-service.ts";
+export type { Permit2CallResult } from "./permit2-service.ts";
 export type {
   X402Chain,
   X402Facilitator,
@@ -28,6 +37,9 @@ export type {
   X402PaymentPayload,
   X402PaymentRequired,
   X402PaymentRequirements,
+  X402Permit2Authorization,
+  X402Permit2Payload,
+  X402Permit2PaymentPayload,
   X402ReceiptResult,
   X402SettleResponse,
   X402SettleResult,

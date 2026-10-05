@@ -87,6 +87,18 @@ export type RuntimeConfig = {
   promoterPasswordHash: string;
   x402Enabled: boolean;
   x402FacilitatorUrl: string;
+  // Effective Permit2 + x402 Permit2 proxy for this network. Local injects them
+  // (tests, local chain); other networks take the profile values.
+  permit2: Address | null;
+  x402Permit2Proxy: Address | null;
+  // Self-hosted x402 Permit2 settlement (M4). Independent of the legacy
+  // Fuji EIP-3009 order demo above.
+  settlementX402Permit2Enabled: boolean;
+  // When true, only `approved` providers may serve paid calls; pending is
+  // allowed by default so tests and first-run providers can be exercised.
+  servicesRequireApproved: boolean;
+  serviceProviderAgentId: string;
+  serviceEchoPrice: bigint;
 };
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -396,7 +408,6 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
   let starterGasWei = 0n;
   let starterGasDailyCapWei = 0n;
   let starterGasBalanceThresholdWei = 0n;
-  let opsPrivateKey: Hex | null = partial.opsPrivateKey ?? null;
   if (starterGasEnabled) {
     if (!hasRegistry) {
       throw new Error('启动 gas 只允许在有身份注册表的测试网或本地网络开启。');
@@ -413,12 +424,41 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     if (starterGasWei > starterGasDailyCapWei) {
       throw new Error('单次启动 gas 金额不能超过每日总额上限。');
     }
-    if (!opsPrivateKey) {
-      throw new Error('启动 gas 需要 SETTLEMENT_OPS_PRIVATE_KEY（仅从环境读取）。');
+  }
+
+  // Permit2 + proxy come from the profile, or (local only) from injected config
+  // so tests and the local chain can point at a fresh deployment.
+  const permit2 = profile.permit2
+    ? (getAddress(profile.permit2) as Address)
+    : profile.name === 'local' && partial.permit2
+      ? requiredAddress(partial.permit2, 'Permit2 地址')
+      : null;
+  const x402Permit2Proxy = profile.x402Permit2Proxy
+    ? (getAddress(profile.x402Permit2Proxy) as Address)
+    : profile.name === 'local' && partial.x402Permit2Proxy
+      ? requiredAddress(partial.x402Permit2Proxy, 'x402 Permit2 代理')
+      : null;
+  const settlementX402Permit2Enabled = partial.settlementX402Permit2Enabled ?? false;
+  if (settlementX402Permit2Enabled) {
+    const supportsPermit2 =
+      profile.asset.transferMethods.includes('permit2') || profile.name === 'local';
+    if (!supportsPermit2 || !permit2 || !x402Permit2Proxy) {
+      throw new Error(
+        `该网络的 Permit2 自托管结算尚未支持（${profile.displayName} 缺少 permit2 或 x402 Permit2 代理）。`,
+      );
     }
-    opsPrivateKey = requiredKey(opsPrivateKey, '启动 gas 私钥');
+  }
+
+  // The ops key signs starter gas and Permit2 settlement. It is env-only and
+  // separate from the payout executor key so a leak of one never unlocks the other.
+  let opsPrivateKey: Hex | null = partial.opsPrivateKey ?? null;
+  if (starterGasEnabled || settlementX402Permit2Enabled) {
+    if (!opsPrivateKey) {
+      throw new Error('启动 gas 与 Permit2 结算都需要 SETTLEMENT_OPS_PRIVATE_KEY（仅从环境读取）。');
+    }
+    opsPrivateKey = requiredKey(opsPrivateKey, 'ops 私钥');
     if (privateKey && opsPrivateKey === privateKey) {
-      throw new Error('启动 gas 私钥必须与出款执行钱包私钥不同。');
+      throw new Error('ops 私钥必须与出款执行钱包私钥不同。');
     }
   } else {
     opsPrivateKey = null;
@@ -473,6 +513,12 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     promoterPasswordHash,
     x402Enabled,
     x402FacilitatorUrl,
+    permit2,
+    x402Permit2Proxy,
+    settlementX402Permit2Enabled,
+    servicesRequireApproved: partial.servicesRequireApproved ?? false,
+    serviceProviderAgentId: partial.serviceProviderAgentId ?? '0',
+    serviceEchoPrice: partial.serviceEchoPrice ?? 1_000_000n,
   };
 }
 
@@ -660,6 +706,20 @@ export function loadConfig(opts?: {
     promoterPasswordHash: env.SETTLEMENT_PROMOTER_PASSWORD_HASH ?? '',
     x402Enabled: flagEnv(env.SETTLEMENT_X402_ENABLED, 'SETTLEMENT_X402_ENABLED'),
     x402FacilitatorUrl: env.SETTLEMENT_X402_FACILITATOR_URL ?? DEFAULT_X402_FACILITATOR_URL,
+    permit2: env.SETTLEMENT_PERMIT2 as Address | undefined,
+    x402Permit2Proxy: env.SETTLEMENT_X402_PERMIT2_PROXY as Address | undefined,
+    settlementX402Permit2Enabled: flagEnv(
+      env.SETTLEMENT_X402_PERMIT2_ENABLED,
+      'SETTLEMENT_X402_PERMIT2_ENABLED',
+    ),
+    servicesRequireApproved: flagEnv(
+      env.SETTLEMENT_SERVICES_REQUIRE_APPROVED,
+      'SETTLEMENT_SERVICES_REQUIRE_APPROVED',
+    ),
+    serviceProviderAgentId: env.SETTLEMENT_SERVICE_PROVIDER_AGENT_ID ?? '0',
+    serviceEchoPrice: env.SETTLEMENT_SERVICE_ECHO_PRICE
+      ? BigInt(env.SETTLEMENT_SERVICE_ECHO_PRICE)
+      : 1_000_000n,
   });
 
   if (cfg.source === 'beefapi') {

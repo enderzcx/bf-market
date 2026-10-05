@@ -1,16 +1,14 @@
 import {
   createPublicClient,
-  createWalletClient,
   defineChain,
   http,
-  keccak256,
   parseTransaction,
   recoverTransactionAddress,
   TransactionReceiptNotFoundError,
   type TransactionSerialized,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { profileForChainId } from './network.ts';
+import { createOpsSigner, type OpsSigner } from './ops-signer.ts';
 import type { Store } from './store.ts';
 import type {
   Address,
@@ -46,6 +44,7 @@ export function createRpcStarterGasChain(input: {
   rpcUrl: string;
   chainId: number;
   privateKey: Hex;
+  signer?: OpsSigner;
 }): StarterGasChain {
   const finalized =
     profileForChainId(input.chainId)?.finality.kind === 'finalized';
@@ -55,16 +54,20 @@ export function createRpcStarterGasChain(input: {
     nativeCurrency: { name: 'Test gas', symbol: 'TEST', decimals: 18 },
     rpcUrls: { default: { http: [input.rpcUrl] } },
   });
-  const account = privateKeyToAccount(input.privateKey);
+  // Starter gas and Permit2 settlement share one ops wallet. Signing through the
+  // shared serialized signer keeps their nonces from colliding.
+  const signer =
+    input.signer ??
+    createOpsSigner({
+      rpcUrl: input.rpcUrl,
+      chainId: input.chainId,
+      privateKey: input.privateKey,
+    });
+  const account = { address: signer.address };
   const publicClient = createPublicClient({
     chain,
     transport: http(input.rpcUrl),
     cacheTime: 0,
-  });
-  const walletClient = createWalletClient({
-    account,
-    chain,
-    transport: http(input.rpcUrl),
   });
   return {
     async getChainId() {
@@ -76,16 +79,7 @@ export function createRpcStarterGasChain(input: {
       return publicClient.getBalance({ address });
     },
     async signTransfer({ to, amountWei }) {
-      const request = await walletClient.prepareTransactionRequest({
-        to,
-        value: amountWei,
-        nonce: await publicClient.getTransactionCount({
-          address: account.address,
-          blockTag: 'pending',
-        }),
-      });
-      const rawTransaction = await walletClient.signTransaction(request);
-      return { rawTransaction, hash: keccak256(rawTransaction) };
+      return signer.sign({ to, value: amountWei });
     },
     async broadcast(raw) {
       const tx = parseTransaction(raw);
@@ -102,7 +96,7 @@ export function createRpcStarterGasChain(input: {
       ) {
         throw new Error('Signed starter gas configuration mismatch');
       }
-      await publicClient.sendRawTransaction({ serializedTransaction: raw });
+      await signer.sendRawTransaction(raw);
     },
     async inspect(hash) {
       let receipt;

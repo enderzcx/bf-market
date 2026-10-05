@@ -24,6 +24,8 @@ import {
   type PayoutRecord,
   type PayoutStatus,
   type PublicPayout,
+  type ServicePaymentRecord,
+  type ServicePaymentStatus,
   type StarterGasRecord,
   type StarterGasStatus,
   type X402PaymentStatus,
@@ -66,6 +68,15 @@ const STARTER_GAS_STATUSES = new Set<StarterGasStatus>([
   "broadcast",
   "confirmed",
   "blocked",
+]);
+
+const SERVICE_PAYMENT_STATUSES = new Set<ServicePaymentStatus>([
+  "required",
+  "verified",
+  "settling",
+  "settled",
+  "delivered",
+  "failed",
 ]);
 
 function payoutId(merchantId: string, sourceId: string): Hex {
@@ -157,6 +168,30 @@ function mapStarterGas(row: Record<string, unknown>): StarterGasRecord {
     journal: row.journal ? (String(row.journal) as Hex) : null,
     status: status as StarterGasStatus,
     day: String(row.day),
+    error: row.error ? String(row.error) : null,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+function mapServicePayment(row: Record<string, unknown>): ServicePaymentRecord {
+  const status = String(row.status);
+  if (!SERVICE_PAYMENT_STATUSES.has(status as ServicePaymentStatus)) {
+    throw new ServiceError(500, "服务付款状态异常。");
+  }
+  return {
+    paymentKey: String(row.payment_key) as Hex,
+    serviceId: String(row.service_id),
+    chainId: Number(row.chain_id),
+    payer: String(row.payer) as Address,
+    payTo: String(row.pay_to) as Address,
+    asset: String(row.asset) as Address,
+    amount: String(row.amount),
+    nonce: String(row.nonce),
+    status: status as ServicePaymentStatus,
+    txHash: row.tx_hash ? (String(row.tx_hash) as Hex) : null,
+    journal: row.journal ? (String(row.journal) as Hex) : null,
+    resultJson: row.result_json ? String(row.result_json) : null,
     error: row.error ? String(row.error) : null,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -342,6 +377,25 @@ export function createStore(opts: {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS starter_gas_grants_day ON starter_gas_grants(day);
+    CREATE TABLE IF NOT EXISTS service_payments (
+      payment_key TEXT PRIMARY KEY,
+      service_id TEXT NOT NULL,
+      chain_id INTEGER NOT NULL,
+      payer TEXT NOT NULL,
+      pay_to TEXT NOT NULL,
+      asset TEXT NOT NULL,
+      amount TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('required', 'verified', 'settling', 'settled', 'delivered', 'failed')),
+      tx_hash TEXT,
+      journal TEXT,
+      result_json TEXT,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (chain_id, payer, nonce)
+    );
+    CREATE INDEX IF NOT EXISTS service_payments_service ON service_payments(service_id);
   `);
   db.run(
     `INSERT OR IGNORE INTO partner (id, name, wallet, auto_settle, available, pending, paid, consumed)
@@ -442,6 +496,13 @@ export function createStore(opts: {
       .query(`SELECT * FROM starter_gas_grants WHERE address = ?`)
       .get(getAddress(address_)) as Record<string, unknown> | null;
     return row ? mapStarterGas(row) : null;
+  };
+
+  const getServicePayment = (paymentKey: string): ServicePaymentRecord | null => {
+    const row = db
+      .query(`SELECT * FROM service_payments WHERE payment_key = ?`)
+      .get(paymentKey) as Record<string, unknown> | null;
+    return row ? mapServicePayment(row) : null;
   };
 
   const getPayout = (id: string): PayoutRecord | null => {
@@ -1426,6 +1487,83 @@ export function createStore(opts: {
          WHERE address = ? AND status IN ('reserved', 'signed', 'broadcast', 'blocked')`,
         [error, now(), address(address_)],
       );
+    },
+    getServicePayment,
+    // Creates the payment row on first sight, or returns the existing one for
+    // the same (chain, payer, nonce) authorization so a replay never re-settles.
+    upsertServicePayment(input: {
+      paymentKey: Hex;
+      serviceId: string;
+      chainId: number;
+      payer: Address;
+      payTo: Address;
+      asset: Address;
+      amount: string;
+      nonce: string;
+      createdAt?: number;
+    }): ServicePaymentRecord {
+      const payer = address(input.payer, "付款地址");
+      const payTo = address(input.payTo, "收款地址");
+      const asset = address(input.asset, "代币");
+      return tx(() => {
+        const byNonce = db
+          .query(
+            `SELECT * FROM service_payments WHERE chain_id = ? AND payer = ? AND nonce = ?`,
+          )
+          .get(input.chainId, payer, input.nonce) as Record<string, unknown> | null;
+        if (byNonce) return mapServicePayment(byNonce);
+        const at = input.createdAt ?? now();
+        db.run(
+          `INSERT INTO service_payments (payment_key, service_id, chain_id, payer, pay_to, asset, amount, nonce, status, tx_hash, journal, result_json, error, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'required', NULL, NULL, NULL, NULL, ?, ?)`,
+          [
+            input.paymentKey,
+            input.serviceId,
+            input.chainId,
+            payer,
+            payTo,
+            asset,
+            input.amount,
+            input.nonce,
+            at,
+            at,
+          ],
+        );
+        return getServicePayment(input.paymentKey)!;
+      });
+    },
+    setServicePaymentStatus(
+      paymentKey: string,
+      status: ServicePaymentStatus,
+      extra?: { txHash?: Hex | null; journal?: Hex | null; error?: string | null },
+    ) {
+      const result = db.run(
+        `UPDATE service_payments SET status = ?, tx_hash = COALESCE(?, tx_hash), journal = COALESCE(?, journal), error = ?, updated_at = ?
+         WHERE payment_key = ?`,
+        [
+          status,
+          extra?.txHash ?? null,
+          extra?.journal ?? null,
+          extra?.error ?? null,
+          now(),
+          paymentKey,
+        ],
+      );
+      if (result.changes !== 1) {
+        throw new ServiceError(409, "服务付款状态异常。");
+      }
+      return getServicePayment(paymentKey)!;
+    },
+    markServicePaymentDelivered(paymentKey: string, resultJson: string) {
+      const result = db.run(
+        `UPDATE service_payments SET status = 'delivered', result_json = ?, error = NULL, updated_at = ?
+         WHERE payment_key = ?`,
+        [resultJson, now(), paymentKey],
+      );
+      if (result.changes !== 1) {
+        throw new ServiceError(409, "服务付款状态异常。");
+      }
+      return getServicePayment(paymentKey)!;
     },
   };
 }

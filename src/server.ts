@@ -57,6 +57,8 @@ import {
   createStarterGasService,
   type StarterGasChain,
 } from "./starter-gas.ts";
+import { createOpsSigner, type OpsSigner } from "./ops-signer.ts";
+import { createServiceCatalog, type ServiceCatalog } from "./services.ts";
 import { parseAmount } from "./money.ts";
 import {
   commissionFromBalances,
@@ -85,10 +87,13 @@ import {
 import { createWorker, type SettlementWorker } from "./worker.ts";
 import {
   createHttpFacilitator,
+  createPermit2Service,
+  createRpcPermit2Facilitator,
   createRpcX402Chain,
   createX402Service,
   headerGet,
   PAYMENT_SIGNATURE_HEADER,
+  type Permit2Facilitator,
   type X402Chain,
   type X402Facilitator,
 } from "./x402/index.ts";
@@ -230,6 +235,9 @@ export function createApp(opts: {
   x402Chain?: X402Chain;
   agentRegistryChain?: AgentRegistryChain;
   starterGasChain?: StarterGasChain;
+  opsSigner?: OpsSigner;
+  permit2Facilitator?: Permit2Facilitator;
+  serviceCatalog?: ServiceCatalog;
 }): SettlementApp {
   assertLoopbackBind(opts.config.host);
   const origin = originOf(opts.config.host, opts.config.port);
@@ -431,6 +439,16 @@ export function createApp(opts: {
         registry: identityRegistry,
       }))
     : null;
+  // One ops signer per process: starter gas and Permit2 settlement both sign
+  // through it so their nonces cannot collide.
+  const opsSigner = opts.config.opsPrivateKey
+    ? (opts.opsSigner ??
+      createOpsSigner({
+        rpcUrl: opts.config.chain.rpcUrl,
+        chainId: opts.config.chain.chainId,
+        privateKey: opts.config.opsPrivateKey,
+      }))
+    : null;
   const starterGas = opts.config.starterGasEnabled
     ? createStarterGasService({
         store: opts.store,
@@ -440,9 +458,32 @@ export function createApp(opts: {
             rpcUrl: opts.config.chain.rpcUrl,
             chainId: opts.config.chain.chainId,
             privateKey: opts.config.opsPrivateKey!,
+            signer: opsSigner ?? undefined,
           }),
         config: opts.config,
         now,
+      })
+    : null;
+
+  const serviceCatalog =
+    opts.serviceCatalog ??
+    createServiceCatalog({ store: opts.store, config: opts.config });
+  const permit2Service = opts.config.settlementX402Permit2Enabled
+    ? createPermit2Service({
+        store: opts.store,
+        config: opts.config,
+        catalog: serviceCatalog,
+        facilitator:
+          opts.permit2Facilitator ??
+          createRpcPermit2Facilitator({
+            rpcUrl: opts.config.chain.rpcUrl,
+            chainId: opts.config.chain.chainId,
+            network: opts.config.network.caip2,
+            asset: getAddress(opts.config.chain.token) as Address,
+            permit2: opts.config.permit2!,
+            proxy: opts.config.x402Permit2Proxy!,
+            opsSigner: opsSigner!,
+          }),
       })
     : null;
 
@@ -925,6 +966,20 @@ export function createApp(opts: {
         if (!record) throw new ServiceError(404, "找不到该代理。");
         return json(200, { agent: publicAgent(record) });
       }
+      if (req.method === "GET" && url.pathname === "/api/services") {
+        if (!permit2Service) throw new ServiceError(404, "找不到该接口。");
+        requireHost(req);
+        return json(200, {
+          services: serviceCatalog.list().map((definition) => ({
+            serviceId: definition.serviceId,
+            providerAgentId: definition.providerAgentId,
+            price: definition.price.toString(),
+            description: definition.description,
+            network: opts.config.network.caip2,
+            asset: opts.config.network.asset.address,
+          })),
+        });
+      }
       if (req.method !== "POST")
         return json(405, { error: "不支持的请求方法。" });
 
@@ -945,6 +1000,23 @@ export function createApp(opts: {
         requireHost(req);
         const grant = await requestStarterGas(await readJson(req));
         return json(grant.status === "confirmed" ? 200 : 202, grant);
+      }
+
+      // Public paid-service call: a wallet-signed x402 Permit2 payment is the
+      // identity, so no session and no Origin header are required. Handled
+      // before the session-gated mutations below.
+      const serviceCallMatch = /^\/api\/services\/([^/]+)\/call$/.exec(url.pathname);
+      if (serviceCallMatch) {
+        if (!permit2Service) throw new ServiceError(404, "找不到该接口。");
+        const host = requireHost(req);
+        const body = await readJson(req);
+        const result = await permit2Service.call({
+          serviceId: decodeURIComponent(serviceCallMatch[1] ?? ""),
+          signatureHeader: headerGet(req.headers, PAYMENT_SIGNATURE_HEADER),
+          body,
+          origin: canonicalOrigin(host, publicOrigin),
+        });
+        return json(result.status, result.body, result.headers);
       }
 
       if (url.pathname === "/api/auth/login") {
