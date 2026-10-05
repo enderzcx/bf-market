@@ -1,0 +1,29 @@
+{
+  "milestone": "M6 (discovery + MCP; concierge agent not included)",
+  "network": "botchain-testnet",
+  "chainId": 968,
+  "serverCommit": "da6ae1e",
+  "server": "http://127.0.0.1:4311 (loopback only)",
+  "discovery": {
+    "endpoint": "GET /discovery/resources",
+    "items": 1,
+    "service": "echo",
+    "amountAtomic": "10000",
+    "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+    "providerName": "BeefAPI",
+    "note": "resource URL follows the request origin; it becomes the public origin once deployed"
+  },
+  "mcpFlow": ["initialize", "platform_info", "search_services", "get_service", "call_service without payment -> PaymentRequired", "call_service with _meta x402/payment -> delivered"],
+  "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+  "settlement": {
+    "hash": "0xf45e9aebce8657d81d81570ea24254c7a4700c5fa90673ec92af601d058a33e0",
+    "block": "25803353",
+    "finalized": true,
+    "from": "0x2547c1122c9aFD11eA0c4b66bb033552b90B979F",
+    "to": "0x402085c248EeA27D92E8b30b2C58ed07f9E20001",
+    "usdtTransfer": "buyer -> provider 0.01",
+    "feeTbot": "0.0016661"
+  },
+  "delivered": {"via": "MCP", "network": "BOT Chain testnet"},
+  "balancesAfterUsdt": {"buyer": "9.97", "provider": "0.03"}
+}
