@@ -59,6 +59,8 @@ import {
 } from "./starter-gas.ts";
 import { createOpsSigner, type OpsSigner } from "./ops-signer.ts";
 import { createServiceCatalog, type ServiceCatalog } from "./services.ts";
+import { createServiceDiscovery, parseDiscoveryFilter } from "./discovery.ts";
+import { createMcpEndpoint } from "./mcp.ts";
 import { parseAmount } from "./money.ts";
 import {
   commissionFromBalances,
@@ -468,24 +470,42 @@ export function createApp(opts: {
   const serviceCatalog =
     opts.serviceCatalog ??
     createServiceCatalog({ store: opts.store, config: opts.config });
-  const permit2Service = opts.config.settlementX402Permit2Enabled
+  const permit2Facilitator = opts.config.settlementX402Permit2Enabled
+    ? (opts.permit2Facilitator ??
+      createRpcPermit2Facilitator({
+        rpcUrl: opts.config.chain.rpcUrl,
+        chainId: opts.config.chain.chainId,
+        network: opts.config.network.caip2,
+        asset: getAddress(opts.config.chain.token) as Address,
+        permit2: opts.config.permit2!,
+        proxy: opts.config.x402Permit2Proxy!,
+        opsSigner: opsSigner!,
+      }))
+    : null;
+  const permit2Service = permit2Facilitator
     ? createPermit2Service({
         store: opts.store,
         config: opts.config,
         catalog: serviceCatalog,
-        facilitator:
-          opts.permit2Facilitator ??
-          createRpcPermit2Facilitator({
-            rpcUrl: opts.config.chain.rpcUrl,
-            chainId: opts.config.chain.chainId,
-            network: opts.config.network.caip2,
-            asset: getAddress(opts.config.chain.token) as Address,
-            permit2: opts.config.permit2!,
-            proxy: opts.config.x402Permit2Proxy!,
-            opsSigner: opsSigner!,
-          }),
+        facilitator: permit2Facilitator,
       })
     : null;
+  // Discovery catalog and MCP entry share the same service catalog and payment
+  // requirements as the paid HTTP route, so their terms cannot drift.
+  const discovery = permit2Facilitator
+    ? createServiceDiscovery({
+        store: opts.store,
+        config: opts.config,
+        catalog: serviceCatalog,
+        requirementsOf: (input) => permit2Facilitator.requirementsOf(input),
+        now,
+      })
+    : null;
+  const mcpEndpoint = createMcpEndpoint({
+    config: opts.config,
+    permit2Service,
+    discovery,
+  });
 
   const allowInsecureLocal = opts.config.network.name === "local";
   const agentOriginOf = (host: string) =>
@@ -831,6 +851,12 @@ export function createApp(opts: {
   const fetch = async (req: Request): Promise<Response> => {
     try {
       const url = new URL(req.url);
+      // MCP entry point (Streamable HTTP). Free to connect; paid tools require
+      // an x402 payment payload inside the tool call.
+      if (url.pathname === "/mcp") {
+        const host = requireHost(req);
+        return mcpEndpoint.handle(req, canonicalOrigin(host, publicOrigin));
+      }
       if (req.method !== "GET" && req.method !== "POST") {
         return json(405, { error: "不支持的请求方法。" });
       }
@@ -903,6 +929,23 @@ export function createApp(opts: {
             "Cache-Control": "public, max-age=60",
           },
         });
+      }
+
+      // x402 Bazaar discovery: catalog of available paid services in the
+      // /discovery/resources format, plus a natural-language search.
+      if (
+        req.method === "GET" &&
+        (url.pathname === "/discovery/resources" || url.pathname === "/discovery/search")
+      ) {
+        const host = requireHost(req);
+        if (!discovery) throw new ServiceError(404, "找不到该接口。");
+        const origin = canonicalOrigin(host, publicOrigin);
+        const filter = parseDiscoveryFilter(url.searchParams);
+        if (url.pathname === "/discovery/search") {
+          const query = url.searchParams.get("query") ?? "";
+          return json(200, discovery.search(origin, { ...filter, query }));
+        }
+        return json(200, discovery.list(origin, filter));
       }
 
       if (!url.pathname.startsWith("/api/")) {

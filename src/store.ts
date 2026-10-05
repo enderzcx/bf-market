@@ -490,6 +490,16 @@ export function createStore(opts: {
     return row ? mapAgent(row) : null;
   };
 
+  const getAgentDraftByAgentId = (agentId: string): AgentDraftRecord | null => {
+    const row = db
+      .query(
+        `SELECT * FROM agent_drafts WHERE registered_agent_id = ?
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(agentId) as Record<string, unknown> | null;
+    return row ? mapAgentDraft(row) : null;
+  };
+
   const getStarterGas = (address_: string): StarterGasRecord | null => {
     if (!isAddress(address_, { strict: false })) return null;
     const row = db
@@ -1335,6 +1345,7 @@ export function createStore(opts: {
       return getAgentDraft(input.draftId)!;
     },
     getAgentDraft,
+    getAgentDraftByAgentId,
     countOpenAgentDrafts(address_: string): number {
       const row = db
         .query(

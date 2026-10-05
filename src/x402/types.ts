@@ -43,6 +43,9 @@ export type X402PaymentRequired = {
   error?: string;
   resource: X402ResourceInfo;
   accepts: X402PaymentRequirements[];
+  // v2 extension declarations (e.g. `bazaar`) echoed by clients into their
+  // PaymentPayload so facilitators can catalog the resource.
+  extensions?: Record<string, unknown>;
 };
 
 export type X402ExactAuthorization = {

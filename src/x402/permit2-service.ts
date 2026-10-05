@@ -1,5 +1,6 @@
 import { getAddress, isAddress, isHex } from 'viem';
 import type { RuntimeConfig } from '../config.ts';
+import { bazaarHttpExtension, bazaarMcpExtension } from '../discovery.ts';
 import type { ServiceCatalog, ServiceDefinition } from '../services.ts';
 import type { Store } from '../store.ts';
 import type { Address, Hex } from '../types.ts';
@@ -133,6 +134,8 @@ export function parsePermit2Payload(
   };
 }
 
+export type Permit2Service = ReturnType<typeof createPermit2Service>;
+
 export function createPermit2Service(opts: {
   store: Store;
   config: RuntimeConfig;
@@ -153,24 +156,37 @@ export function createPermit2Service(opts: {
     return run;
   };
 
+  const MCP_TOOL = 'call_service';
   const resourceUrl = (origin: string, serviceId: string) =>
     `${origin.replace(/\/$/, '')}/api/services/${encodeURIComponent(serviceId)}/call`;
+  const mcpUrl = (origin: string) => `${origin.replace(/\/$/, '')}/mcp`;
 
+  // The 402 body carries the bazaar discovery extension (specs/extensions/
+  // bazaar.md). HTTP and MCP differ in `resource.url` and `info.input.type`;
+  // the payment requirements are identical either way.
   const required = (input: {
     origin: string;
     definition: ServiceDefinition;
     requirements: X402PaymentRequirements;
     error: string;
+    transport: 'http' | 'mcp';
   }): Permit2CallResult => {
     const body: X402PaymentRequired = {
       x402Version: X402_VERSION,
       error: input.error,
       resource: {
-        url: resourceUrl(input.origin, input.definition.serviceId),
+        url:
+          input.transport === 'mcp'
+            ? mcpUrl(input.origin)
+            : resourceUrl(input.origin, input.definition.serviceId),
         description: input.definition.description,
         mimeType: 'application/json',
       },
       accepts: [input.requirements],
+      extensions:
+        input.transport === 'mcp'
+          ? bazaarMcpExtension(input.definition, MCP_TOOL)
+          : bazaarHttpExtension(input.definition),
     };
     return {
       status: 402,
@@ -196,7 +212,9 @@ export function createPermit2Service(opts: {
       signatureHeader: string | null;
       body: Record<string, unknown>;
       origin: string;
+      transport?: 'http' | 'mcp';
     }): Promise<Permit2CallResult> {
+      const transport = input.transport ?? 'http';
       const definition = opts.catalog.get(input.serviceId);
       if (!definition) throw new ServiceError(404, '找不到该服务。');
       const { payTo, deliver } = opts.catalog.resolve(input.serviceId);
@@ -211,6 +229,7 @@ export function createPermit2Service(opts: {
           definition,
           requirements,
           error: 'PAYMENT-SIGNATURE header is required',
+          transport,
         });
       }
 
@@ -222,7 +241,13 @@ export function createPermit2Service(opts: {
         );
       } catch (err) {
         if (err instanceof ServiceError && err.status === 402) {
-          return required({ origin: input.origin, definition, requirements, error: err.message });
+          return required({
+            origin: input.origin,
+            definition,
+            requirements,
+            error: err.message,
+            transport,
+          });
         }
         throw err;
       }
@@ -264,6 +289,7 @@ export function createPermit2Service(opts: {
                 definition,
                 requirements,
                 error: err.message,
+                transport,
               });
             }
             throw err;
@@ -321,6 +347,7 @@ export function createPermit2Service(opts: {
               definition,
               requirements,
               error: '付款结算失败。',
+              transport,
             });
           } else if (inspected.reason === 'mismatch') {
             opts.store.setServicePaymentStatus(paymentKey, 'failed', {
