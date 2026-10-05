@@ -81,7 +81,7 @@ memory_review_due: event:m1-start
 
 | 步骤 | 人（看到/做什么 · 平台做什么） | Agent（看到/做什么 · 平台做什么） |
 |---|---|---|
-| 1 注册（链上） | 看到网页「连接钱包」并点注册；钱包弹出交易，确认后看到自己的 agentId 与档案。平台提供连接与注册入口，发启动 gas，记录 agentId 与档案。 | 调 API/MCP 得到待签注册交易或指引；用自己钱包签名广播，读回 agentId。平台返回待签交易或指引，发启动 gas，记录 agentId。 |
+| 1 注册（链上；服务方必须，买家可选） | 看到网页「连接钱包」并点注册；钱包弹出交易，确认后看到自己的 agentId 与档案。平台提供连接与注册入口，发启动 gas，记录 agentId 与档案。 | 调 API/MCP 得到待签注册交易或指引；用自己钱包签名广播，读回 agentId。平台返回待签交易或指引，发启动 gas，记录 agentId。 |
 | 2 找服务 | 在服务目录看到 BeefAPI 的服务与价格，或直接问咨询 Agent。平台输出与 x402 Bazaar `/discovery/resources` 兼容的目录。 | 通过 MCP 或目录接口搜到服务，拿到价格与付款要求。平台返回服务清单与 x402 付款要求。 |
 | 3 x402 付款 | 首次对 Permit2 做一次 approve（付少量 gas），之后每次只签名。平台自托管结算，用 ops 钱包付结算 gas。 | 对 Permit2 授权后签 x402 付款授权，提交。平台在进程内 verify/settle，钱直接到 BeefAPI 收款地址。 |
 | 4 拿真实结果 | 页面直接显示 BeefAPI 返回的真实结果。平台用自己的 BeefAPI key 调用并把结果返回。 | 收到真实结果 JSON。平台确认付款后调用 BeefAPI 并返回结果。 |
@@ -109,8 +109,10 @@ memory_review_due: event:m1-start
 
 ### M3：注册流程
 
+- 注册规则：服务方必须注册（注册即上架，agentWallet 即 x402 收款地址）；买家可选（不注册也能付款，注册的 Agent 买家有购买记录归属）。演示中 BeefAPI 以服务方身份注册，buyer-demo 以 Agent 买家身份注册一次。
 - 人：网页连接钱包，发起注册交易，看到 agentId 与档案。
 - Agent：API/MCP 返回待签注册交易或指引，Agent 用自己的钱包签名广播。
+- 平台审核状态（是否展示在目录里）记在链下目录，不写链上；链上 metadata 只有 NFT 持有人能写。
 - 启动 gas 发放：平台在测试网给新注册钱包发少量 tBOT（覆盖 register + Permit2 approve），设上限与防刷（每地址一次、每日总额上限、总开关）。
 - 交付物：注册路由/API、启动 gas 服务、注册页与测试。
 - 完成标准：无 gas 新钱包拿到启动 gas 且不可重复领取；注册交易与 agentId 读回一致。
@@ -181,7 +183,7 @@ memory_review_due: event:m1-start
 2. TRON Nile 领测试 USDT 并跨链到 968（给 buyer-demo）。
 3. 向 BOT Chain 对接人提 Safe 工厂与 ERC-8004 官方部署（可选、非阻塞）。
 
-测试网钱包已生成并保存在 `.local/botchain-testnet/`（git 忽略，权限 600）：ops `0x2547c1122c9aFD11eA0c4b66bb033552b90B979F`（部署注册表、付结算 gas、发启动 gas），buyer-demo `0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada`（演示买家/Agent）。私钥只放受控进程环境，不出现在文档里。
+测试网钱包已生成并保存在 `.secrets/botchain-testnet/`（git 忽略，权限 600）：ops `0x2547c1122c9aFD11eA0c4b66bb033552b90B979F`（部署注册表、付结算 gas、发启动 gas），buyer-demo `0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada`（演示买家/Agent）。私钥只放受控进程环境，不出现在文档里。
 
 ## 停止条件
 
@@ -207,8 +209,9 @@ memory_review_due: event:m1-start
 5. 付款：x402 v2 exact scheme 改走 Permit2（`@x402/evm` 自带实现）；BOT Chain 无第三方 facilitator，结算服务在本服务进程内自托管，由专用 ops 钱包付 gas。买家首次需对 Permit2 做一次 approve。钱的流向：买家 USDT 直接到 BeefAPI 收款地址，平台只付结算 gas；平台抽成后续再加。
 6. 入口：服务目录 API（输出与 x402 Bazaar 扩展 `/discovery/resources` 格式兼容）、MCP 入口、咨询 Agent（回答平台能做什么、有哪些服务和价格，引导注册/付款；其模型调用本身向 BeefAPI 购买，作为第一笔「Agent 买服务」）。付费接口无需登录，钱包签名即身份。
 7. 新钱包启动 gas：平台在测试网给新注册钱包发少量 tBOT（覆盖 register + Permit2 approve），需设上限与防刷（每地址一次、每日总额上限）。
-8. 测试网钱包已生成并保存在 `.local/botchain-testnet/`（git 忽略，权限 600）：ops `0x2547c1122c9aFD11eA0c4b66bb033552b90B979F`（部署注册表、付结算 gas、发启动 gas），buyer-demo `0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada`（演示买家/Agent）。私钥不得出现在文档中。
+8. 测试网钱包已生成并保存在 `.secrets/botchain-testnet/`（git 忽略，权限 600）：ops `0x2547c1122c9aFD11eA0c4b66bb033552b90B979F`（部署注册表、付结算 gas、发启动 gas），buyer-demo `0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada`（演示买家/Agent）。私钥不得出现在文档中。
 9. 旧资产处置：KTrace 合约（各链）与 BOT 主网 677 上的 Settlement/KTrace 部署本阶段不接入、不引用；Settlement 出款引擎保留供后续推广分佣阶段复用。`agent-service` 与 `kite-trace-platform` 只读参考，不再修改。
+10. 注册规则（同日补充）：服务方必须注册链上身份，注册即上架，身份的 agentWallet 作为 x402 收款地址；买家可选，人类买家只用钱包付款，Agent 买家鼓励注册。下一阶段推广者以 agentId 作推荐码、佣金付到其 agentWallet。
 
 ## 记忆交接
 
