@@ -1,0 +1,44 @@
+{
+  "result": "DEPLOYED",
+  "checkedAt": "2026-10-05T12:34:19.488Z",
+  "chainId": 968,
+  "rpc": "https://rpc.bohr.life",
+  "owner": "0x2547c1122c9aFD11eA0c4b66bb033552b90B979F",
+  "implementation": "0x15dE9915949D8E326FF2abeC186D7036987786A1",
+  "proxy": "0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607",
+  "registry": "0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607",
+  "getVersion": "2.0.0",
+  "implementationSlot": "0x15dE9915949D8E326FF2abeC186D7036987786A1",
+  "registerSelectorSimulated": true,
+  "transactions": [
+    {
+      "name": "IdentityRegistryUpgradeable",
+      "address": "0x15dE9915949D8E326FF2abeC186D7036987786A1",
+      "nonce": 0,
+      "hash": "0x4ac06a30da4c65f7489f4b0d02d1f99245861e755a015872e47129e04d3b109b",
+      "blockNumber": "25792222",
+      "blockHash": "0xc4f2959dd954739ed9b8221d54c8db80c6633ec276ef73c8655ba0cebaca521b",
+      "gasUsed": "3211288",
+      "gasPrice": "20000000000",
+      "feeWei": "64225760000000000"
+    },
+    {
+      "name": "ERC1967Proxy",
+      "address": "0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607",
+      "nonce": 1,
+      "hash": "0xdc575f2ccb740f7fd90dba0634cdb163c45900de8da1df6c2eb9c1f606cbfb12",
+      "blockNumber": "25792229",
+      "blockHash": "0x8a419c71e2cd4104e27b27bc6ba8fe4894f59c7a40e9a13c5400a06cbcb37f17",
+      "gasUsed": "275680",
+      "gasPrice": "20000000000",
+      "feeWei": "5513600000000000"
+    }
+  ],
+  "totalFeeWei": "69739360000000000",
+  "ownerBalanceWei": "4930260640000000000",
+  "sourceHashes": {
+    "contracts/erc8004/IdentityRegistryUpgradeable.sol": "a6b7aca38a87f9cfcd1ad03698fb9a93455619c53d38e2a079459d963a4c75f6",
+    "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol": "a06fe97082355529c1da9076ea6c4518875ca9fdb1a4fa1e194c35cff21b29a1"
+  },
+  "compiler": "0.8.30+commit.73712a01.Emscripten.clang"
+}

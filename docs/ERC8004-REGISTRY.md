@@ -1,6 +1,19 @@
 # ERC-8004 身份注册表（BOT 测试网 968 本地准备）
 
-M2 的本地准备：把 ERC-8004 官方 IdentityRegistry 以「实现 + ERC1967Proxy」部署到我们自己的地址，由我们做 owner。**本文件只记录准备与只读结果，尚未部署。**
+M2：把 ERC-8004 官方 IdentityRegistry 以「实现 + ERC1967Proxy」部署到我们自己的地址，由我们做 owner。
+
+## BOT Chain 测试网 968 部署（2026-10-05，Ender 批准）
+
+| 项 | 值 |
+|---|---|
+| 注册表（对外地址，代理） | `0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607` |
+| 实现合约 | `0x15dE9915949D8E326FF2abeC186D7036987786A1` |
+| owner | `0x2547c1122c9aFD11eA0c4b66bb033552b90B979F`（ops） |
+| 实现部署交易 | `0x4ac06a30da4c65f7489f4b0d02d1f99245861e755a015872e47129e04d3b109b`（区块 25792222） |
+| 代理部署交易 | `0xdc575f2ccb740f7fd90dba0634cdb163c45900de8da1df6c2eb9c1f606cbfb12`（区块 25792229） |
+| 实际费用 | 0.06973936 tBOT（gas 3,211,288 + 275,680，20 gwei） |
+
+读回：`owner()` 为 ops，`getVersion()` 为 `2.0.0`，ERC-1967 实现槽指向实现合约，`register(string)` 模拟调用成功；两笔交易状态成功且已在 finalized 区块之内。证据：`docs/evidence/erc8004-botchain-testnet-2026-10-05.json`。浏览器：`https://scan.bohr.life/address/0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607`。
 
 ## 来源
 
