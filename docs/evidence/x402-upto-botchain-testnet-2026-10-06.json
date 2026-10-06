@@ -1,0 +1,44 @@
+{
+  "result": "DEPLOYED",
+  "checkedAt": "2026-10-06T04:35:10.293Z",
+  "chainId": 968,
+  "rpc": "https://rpc.bohr.life",
+  "ops": "0x2547c1122c9aFD11eA0c4b66bb033552b90B979F",
+  "target": "0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002",
+  "initCodeHash": "0x74f7a29cbc3c55f87cdef7f7c551643189e8bb62eed9de67753aebc402b83797",
+  "runtimeKeccak": "0x4662dc27323421a3698be49ac95f7b0dba141c238d31ef543248d1a11f8d8eec",
+  "deployedRuntimeKeccak": "0x4662dc27323421a3698be49ac95f7b0dba141c238d31ef543248d1a11f8d8eec",
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "permit2FromRuntime": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+  "permit2Immutable": [
+    {
+      "start": 198,
+      "length": 32
+    },
+    {
+      "start": 1125,
+      "length": 32
+    },
+    {
+      "start": 1837,
+      "length": 32
+    }
+  ],
+  "transaction": {
+    "nonce": 7,
+    "hash": "0xddd5a1e8338e53b64fa6264ef4d9010122fedddfa4187926f00a837c8d2b56aa",
+    "blockNumber": "25869097",
+    "blockHash": "0x95e0b18bfa2185c73e81de05dfc0cbbf420676a9a6e88ee465a71379de4f3a70",
+    "gasUsed": "758819",
+    "gasPrice": "20000000000",
+    "feeWei": "15176380000000000"
+  },
+  "ownerBalanceWei": "4808904440000000000",
+  "compiler": "0.8.28+commit.7893614a",
+  "openzeppelinContracts": "5.5.0",
+  "sourceHashes": {
+    "src/x402UptoPermit2Proxy.sol": "5f58e5904439b0ae8369c430c7cad33fb96dae3d148b75764ed1c42d6baea912",
+    "src/x402BasePermit2Proxy.sol": "276f1d092f740ede30bb00508b03ae25fc4f64947dde03c4aaa0cccfc73ce1f7",
+    "src/interfaces/ISignatureTransfer.sol": "9ba755409cba5cada98715cc09c9efa50014d6f4c1e98da43e18bc301fe9bbc4"
+  }
+}
