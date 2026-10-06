@@ -24,7 +24,11 @@ import {
   createRpcAgentRegistryChain,
   identityRegistryAbi,
 } from '../src/agent-registry.ts';
-import { runtimeConfig, runtimeFingerprint } from '../src/config.ts';
+import {
+  DEFAULT_BEEFAPI_LLM_BASE_URL,
+  runtimeConfig,
+  runtimeFingerprint,
+} from '../src/config.ts';
 import { createApp, type SettlementApp } from '../src/server.ts';
 import { createServiceCatalog } from '../src/services.ts';
 import { createSource } from '../src/source.ts';
@@ -33,6 +37,7 @@ import type { Chain, Payout, Prepared } from '../src/types.ts';
 import { createWorker } from '../src/worker.ts';
 import {
   permit2PaymentKey,
+  UPTO_PERMIT2_PROXY,
   type Permit2Facilitator,
   type Permit2ReceiptResult,
 } from '../src/x402/index.ts';
@@ -58,6 +63,7 @@ export const PROFILE = {
 const erc8004 = compileErc8004();
 const plainUsdt = compilePlainUSDT();
 const x402Proxy = compileX402Proxy();
+const x402UptoProxy = compileX402UptoProxy();
 
 function compileSolidity(file: string, contract: string) {
   const content = readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8');
@@ -86,6 +92,10 @@ function compilePlainUSDT() {
 
 function compileX402Proxy() {
   return compileSolidity('X402ExactPermit2Proxy.sol', 'x402ExactPermit2Proxy');
+}
+
+function compileX402UptoProxy() {
+  return compileSolidity('X402UptoPermit2Proxy.sol', 'x402UptoPermit2Proxy');
 }
 
 function fixtureCode(name: string): Hex {
@@ -121,6 +131,7 @@ export type ChainEnv = {
   viemChain: ViemChain;
   deployer: ReturnType<typeof privateKeyToAccount>;
   proxyAbi: readonly unknown[];
+  uptoProxyAbi: readonly unknown[];
 };
 
 export async function startChain(): Promise<ChainEnv> {
@@ -192,6 +203,25 @@ export async function startChain(): Promise<ChainEnv> {
     params: [X402_PROXY, proxyRuntime],
   });
 
+  // The upto proxy runtime on 968 is Cancun-compiled too; a shanghai build of
+  // the same source runs at the canonical upto address.
+  const uptoReceipt = await client.waitForTransactionReceipt({
+    hash: await wallet.deployContract({
+      abi: x402UptoProxy.abi,
+      bytecode: x402UptoProxy.bytecode,
+      args: [PERMIT2_ADDRESS],
+    }),
+  });
+  if (uptoReceipt.status !== 'success' || !uptoReceipt.contractAddress) {
+    throw new Error('upto proxy deployment failed');
+  }
+  const uptoRuntime = await client.getCode({ address: uptoReceipt.contractAddress });
+  if (!uptoRuntime || uptoRuntime === '0x') throw new Error('upto proxy runtime missing');
+  await server.provider.request({
+    method: 'evm_setAccountCode',
+    params: [UPTO_PERMIT2_PROXY, uptoRuntime],
+  });
+
   closers.push(() => server.close());
   return {
     url,
@@ -201,6 +231,7 @@ export async function startChain(): Promise<ChainEnv> {
     viemChain,
     deployer,
     proxyAbi: x402Proxy.abi,
+    uptoProxyAbi: x402UptoProxy.abi,
   };
 }
 
@@ -215,6 +246,12 @@ export function buildApp(
     permit2Facilitator?: Permit2Facilitator;
     deliverEcho?: () => Promise<unknown>;
     starterGas?: boolean;
+    llmServicesEnabled?: boolean;
+    llmBeefapiBaseUrl?: string;
+    llmBeefapiApiKey?: string;
+    llmPayerDailyCapAtomic?: bigint;
+    llmGlobalDailyCapAtomic?: bigint;
+    llmRequestTimeoutMs?: number;
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'settlement-m6-'));
@@ -248,6 +285,12 @@ export function buildApp(
     starterGasWei: overrides.starterGas ? 10n ** 15n : undefined,
     starterGasDailyCapWei: overrides.starterGas ? 10n ** 16n : undefined,
     starterGasBalanceThresholdWei: overrides.starterGas ? 10n ** 15n : undefined,
+    llmServicesEnabled: overrides.llmServicesEnabled ?? false,
+    llmBeefapiBaseUrl: overrides.llmBeefapiBaseUrl ?? DEFAULT_BEEFAPI_LLM_BASE_URL,
+    llmBeefapiApiKey: overrides.llmBeefapiApiKey ?? '',
+    llmPayerDailyCapAtomic: overrides.llmPayerDailyCapAtomic,
+    llmGlobalDailyCapAtomic: overrides.llmGlobalDailyCapAtomic,
+    llmRequestTimeoutMs: overrides.llmRequestTimeoutMs,
   });
   const store = createStore({
     path: join(dir, 'db.sqlite'),
@@ -434,6 +477,7 @@ export async function manualPayload(input: {
 
 export function mockFacilitator(inspect: () => Promise<Permit2ReceiptResult>): Permit2Facilitator {
   return {
+    facilitatorAddress: privateKeyToAccount(OPS_KEY).address,
     async getChainId() {
       return 31337;
     },
@@ -448,6 +492,22 @@ export function mockFacilitator(inspect: () => Promise<Permit2ReceiptResult>): P
         extra: { assetTransferMethod: 'permit2', permit2: PERMIT2_ADDRESS, x402Permit2Proxy: X402_PROXY },
       };
     },
+    uptoRequirementsOf({ amount, asset, payTo }) {
+      return {
+        scheme: 'upto',
+        network: 'eip155:31337',
+        amount,
+        asset: getAddress(asset),
+        payTo: getAddress(payTo),
+        maxTimeoutSeconds: 300,
+        extra: {
+          assetTransferMethod: 'permit2',
+          permit2: PERMIT2_ADDRESS,
+          x402UptoPermit2Proxy: X402_PROXY,
+          facilitatorAddress: privateKeyToAccount(OPS_KEY).address,
+        },
+      };
+    },
     async verify({ payload }) {
       const auth = payload.payload.permit2Authorization;
       return {
@@ -456,7 +516,19 @@ export function mockFacilitator(inspect: () => Promise<Permit2ReceiptResult>): P
         paymentKey: permit2PaymentKey({ chainId: 31337, payer: auth.from, nonce: auth.nonce }),
       };
     },
+    async verifyUpto({ payload }) {
+      const auth = payload.payload.permit2Authorization;
+      return {
+        payer: auth.from,
+        nonce: auth.nonce,
+        paymentKey: permit2PaymentKey({ chainId: 31337, payer: auth.from, nonce: auth.nonce }),
+      };
+    },
+    async assertFunded() {},
     async prepare() {
+      return { rawTransaction: `0x${'ab'.repeat(32)}` as Hex, hash: keccak256(toHex('settle')) };
+    },
+    async prepareUpto() {
       return { rawTransaction: `0x${'ab'.repeat(32)}` as Hex, hash: keccak256(toHex('settle')) };
     },
     async broadcast() {},

@@ -97,12 +97,43 @@ export type X402Permit2PaymentPayload = {
   payload: X402Permit2Payload;
 };
 
+// Permit2 `upto`-scheme payload. Same shape as exact except the witness also
+// binds the facilitator that may choose the final amount (specs/schemes/upto).
+export type X402UptoPermit2Witness = {
+  to: Address;
+  facilitator: Address;
+  validAfter: string;
+};
+
+export type X402UptoPermit2Authorization = {
+  from: Address;
+  permitted: { token: Address; amount: string };
+  spender: Address;
+  nonce: string;
+  deadline: string;
+  witness: X402UptoPermit2Witness;
+};
+
+export type X402UptoPermit2Payload = {
+  signature: Hex;
+  permit2Authorization: X402UptoPermit2Authorization;
+};
+
+export type X402UptoPermit2PaymentPayload = {
+  x402Version: number;
+  resource?: X402ResourceInfo;
+  accepted: X402PaymentRequirements;
+  payload: X402UptoPermit2Payload;
+};
+
 export type X402SettleResponse = {
   success: boolean;
   errorReason?: string;
   payer?: string;
   transaction: string;
   network: string;
+  // Present on metered (upto) settlements: the actual amount charged.
+  amount?: string;
 };
 
 export type X402OrderRecord = {

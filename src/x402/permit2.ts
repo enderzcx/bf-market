@@ -13,13 +13,20 @@ import {
 import {
   PERMIT2_ADDRESS,
   x402ExactPermit2ProxyABI,
+  x402UptoPermit2ProxyABI,
+  x402UptoPermit2ProxyAddress,
 } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/facilitator';
+import { UptoEvmScheme } from '@x402/evm/upto/facilitator';
 import { profileForChainId } from '../network.ts';
 import type { OpsSigner } from '../ops-signer.ts';
 import type { Address, Hex } from '../types.ts';
 import { ServiceError } from '../types.ts';
-import type { X402PaymentRequirements, X402Permit2PaymentPayload } from './types.ts';
+import type {
+  X402PaymentRequirements,
+  X402Permit2PaymentPayload,
+  X402UptoPermit2PaymentPayload,
+} from './types.ts';
 
 // Reused from @x402/evm: the canonical Permit2 address, the
 // x402ExactPermit2Proxy settle ABI, the PermitWitnessTransferFrom types and the
@@ -27,6 +34,8 @@ import type { X402PaymentRequirements, X402Permit2PaymentPayload } from './types
 // the official facilitator broadcasts inside writeContract and cannot persist a
 // signed transaction before it hits the network.
 export const PERMIT2 = getAddress(PERMIT2_ADDRESS) as Address;
+// Canonical upto proxy address (same on every chain via CREATE2).
+export const UPTO_PERMIT2_PROXY = getAddress(x402UptoPermit2ProxyAddress) as Address;
 
 const balanceAbi = parseAbi(['function balanceOf(address owner) view returns (uint256)']);
 const allowanceAbi = parseAbi([
@@ -38,8 +47,16 @@ export type Permit2ReceiptResult =
   | { ok: false; reason: 'pending' | 'reverted' | 'mismatch' | 'missing' };
 
 export interface Permit2Facilitator {
+  readonly facilitatorAddress: Address;
   getChainId(): Promise<number>;
   requirementsOf(input: {
+    amount: string;
+    asset: Address;
+    payTo: Address;
+  }): X402PaymentRequirements;
+  // `upto` requirements advertise the upper bound and the facilitator that may
+  // settle any amount up to it.
+  uptoRequirementsOf(input: {
     amount: string;
     asset: Address;
     payTo: Address;
@@ -48,7 +65,18 @@ export interface Permit2Facilitator {
     payload: X402Permit2PaymentPayload;
     requirements: X402PaymentRequirements;
   }): Promise<{ payer: Address; nonce: string; paymentKey: Hex }>;
+  verifyUpto(input: {
+    payload: X402UptoPermit2PaymentPayload;
+    requirements: X402PaymentRequirements;
+  }): Promise<{ payer: Address; nonce: string; paymentKey: Hex }>;
+  // Re-checks buyer funds and Permit2 allowance before the upstream call, since
+  // the upto settle happens after delivery.
+  assertFunded(input: { payer: Address; asset: Address; amount: string }): Promise<void>;
   prepare(input: { payload: X402Permit2PaymentPayload }): Promise<{
+    rawTransaction: Hex;
+    hash: Hex;
+  }>;
+  prepareUpto(input: { payload: X402UptoPermit2PaymentPayload; amount: string }): Promise<{
     rawTransaction: Hex;
     hash: Hex;
   }>;
@@ -59,6 +87,7 @@ export interface Permit2Facilitator {
     payTo: Address;
     payer: Address;
     amount: string;
+    proxy?: Address;
   }): Promise<Permit2ReceiptResult>;
 }
 
@@ -75,7 +104,12 @@ export function permit2PaymentKey(input: {
 // Official invalidReason codes (from @x402/evm) mapped to operator-facing text.
 const REASON_TEXT: Record<string, string> = {
   invalid_exact_evm_scheme: 'Payment scheme does not match the requirements.',
+  invalid_upto_evm_scheme: 'Payment scheme does not match the requirements.',
   invalid_exact_evm_network_mismatch: 'Payment network does not match the requirements.',
+  invalid_upto_evm_network_mismatch: 'Payment network does not match the requirements.',
+  invalid_upto_evm_payload_settlement_exceeds_amount:
+    'Settlement amount exceeds the signed upper bound.',
+  upto_facilitator_mismatch: 'Payment facilitator does not match this server.',
   invalid_permit2_spender: 'Payment spender is not the x402 Permit2 proxy.',
   invalid_permit2_recipient_mismatch: 'Payment recipient does not match the requirements.',
   permit2_deadline_expired: 'Payment authorization has expired.',
@@ -111,6 +145,31 @@ function buildSettleArgs(payload: X402Permit2PaymentPayload) {
     },
     getAddress(auth.from),
     { to: getAddress(auth.witness.to), validAfter: BigInt(auth.witness.validAfter) },
+    signature,
+  ] as const;
+}
+
+// upto settle: the facilitator passes the actual amount, bounded by the signed
+// permitted amount; the witness binds the facilitator that may choose it.
+function buildUptoArgs(payload: X402UptoPermit2PaymentPayload, amount: string) {
+  const { signature } = parseErc6492Signature(payload.payload.signature);
+  const auth = payload.payload.permit2Authorization;
+  return [
+    {
+      permitted: {
+        token: getAddress(auth.permitted.token),
+        amount: BigInt(auth.permitted.amount),
+      },
+      nonce: BigInt(auth.nonce),
+      deadline: BigInt(auth.deadline),
+    },
+    BigInt(amount),
+    getAddress(auth.from),
+    {
+      to: getAddress(auth.witness.to),
+      facilitator: getAddress(auth.witness.facilitator),
+      validAfter: BigInt(auth.witness.validAfter),
+    },
     signature,
   ] as const;
 }
@@ -161,6 +220,8 @@ export function createRpcPermit2Facilitator(input: {
   asset: Address;
   permit2: Address;
   proxy: Address;
+  // The x402 upto Permit2 proxy (canonical address on all chains).
+  uptoProxy: Address;
   opsSigner: OpsSigner;
   // How long a settle waits for the receipt and, on finalized networks, for the
   // block to reach finality before reporting "pending". Measured 968 lag is
@@ -191,8 +252,14 @@ export function createRpcPermit2Facilitator(input: {
   // reimplemented below so the signed transaction can be journaled first.
   const facilitatorSigner = {
     getAddresses: () => [input.opsSigner.address],
+    // eth_call must carry the ops address as `from`: the upto proxy requires
+    // msg.sender == witness.facilitator, so the verify simulation only passes
+    // when the call originates from the facilitator.
     readContract: (args: unknown) =>
-      publicClient.readContract(args as Parameters<typeof publicClient.readContract>[0]),
+      publicClient.readContract({
+        account: input.opsSigner.address,
+        ...(args as Record<string, unknown>),
+      } as Parameters<typeof publicClient.readContract>[0]),
     verifyTypedData: (args: unknown) =>
       publicClient.verifyTypedData(args as Parameters<typeof publicClient.verifyTypedData>[0]),
     writeContract: notUsed,
@@ -201,6 +268,7 @@ export function createRpcPermit2Facilitator(input: {
     getCode: ({ address }: { address: Address }) => publicClient.getCode({ address }),
   } as unknown as FacilitatorSigner;
   const scheme = new ExactEvmScheme(facilitatorSigner);
+  const uptoScheme = new UptoEvmScheme(facilitatorSigner);
 
   const requirementsOf: Permit2Facilitator['requirementsOf'] = ({ amount, asset, payTo }) => ({
     scheme: 'exact',
@@ -215,56 +283,107 @@ export function createRpcPermit2Facilitator(input: {
       x402Permit2Proxy: input.proxy,
     },
   });
+  const uptoRequirementsOf: Permit2Facilitator['uptoRequirementsOf'] = ({
+    amount,
+    asset,
+    payTo,
+  }) => ({
+    scheme: 'upto',
+    network: input.network,
+    amount,
+    asset: getAddress(asset),
+    payTo: getAddress(payTo),
+    maxTimeoutSeconds: 300,
+    extra: {
+      assetTransferMethod: 'permit2',
+      permit2: input.permit2,
+      x402UptoPermit2Proxy: input.uptoProxy,
+      // The client must sign this into the witness so only this facilitator can
+      // choose the final amount.
+      facilitatorAddress: input.opsSigner.address,
+    },
+  });
+
+  const assertFunded: Permit2Facilitator['assertFunded'] = async ({ payer, asset, amount }) => {
+    const required = BigInt(amount);
+    let balance: bigint;
+    let allowance: bigint;
+    try {
+      balance = (await publicClient.readContract({
+        address: asset,
+        abi: balanceAbi,
+        functionName: 'balanceOf',
+        args: [payer],
+      })) as bigint;
+      allowance = (await publicClient.readContract({
+        address: asset,
+        abi: allowanceAbi,
+        functionName: 'allowance',
+        args: [payer, input.permit2],
+      })) as bigint;
+    } catch {
+      throw new ServiceError(402, 'Payment token is not deployed.');
+    }
+    if (balance < required) {
+      throw new ServiceError(402, 'Buyer has insufficient USDT balance.');
+    }
+    if (allowance < required) {
+      throw new ServiceError(402, 'Buyer has not approved Permit2, or the allowance is too low.');
+    }
+  };
 
   return {
+    facilitatorAddress: input.opsSigner.address,
     async getChainId() {
       const id = await publicClient.getChainId();
       if (id !== input.chainId) throw new Error('RPC chain mismatch');
       return id;
     },
     requirementsOf,
+    uptoRequirementsOf,
+    assertFunded,
     async verify({ payload, requirements }) {
       const auth = payload.payload.permit2Authorization;
       const payer = getAddress(auth.from) as Address;
       if (getAddress(auth.spender) !== input.proxy) {
         throw new ServiceError(402, 'Payment spender is not the x402 Permit2 proxy.');
       }
-      const amount = BigInt(requirements.amount);
       const code = await publicClient.getCode({ address: input.proxy });
       if (!code || code === '0x') {
         throw new ServiceError(402, 'Settlement proxy is not deployed.');
       }
-      // The asset may not exist on this chain; a failed read is a payment
-      // failure, not a server error.
-      let balance: bigint;
-      let allowance: bigint;
-      try {
-        balance = (await publicClient.readContract({
-          address: input.asset,
-          abi: balanceAbi,
-          functionName: 'balanceOf',
-          args: [payer],
-        })) as bigint;
-        allowance = (await publicClient.readContract({
-          address: input.asset,
-          abi: allowanceAbi,
-          functionName: 'allowance',
-          args: [payer, input.permit2],
-        })) as bigint;
-      } catch {
-        throw new ServiceError(402, 'Payment token is not deployed.');
-      }
-      if (balance < amount) {
-        throw new ServiceError(402, 'Buyer has insufficient USDT balance.');
-      }
-      if (allowance < amount) {
-        throw new ServiceError(402, 'Buyer has not approved Permit2, or the allowance is too low.');
-      }
+      await assertFunded({ payer, asset: input.asset, amount: requirements.amount });
       // Official verifier: scheme/network/spender/recipient/deadline/amount/token,
       // signature recovery and an eth_call simulation of the proxy settle.
       const result = await scheme.verify(
         payload as unknown as Parameters<typeof scheme.verify>[0],
         requirements as unknown as Parameters<typeof scheme.verify>[1],
+      );
+      if (!result.isValid) {
+        throw new ServiceError(402, reasonText(result.invalidReason));
+      }
+      return {
+        payer,
+        nonce: auth.nonce,
+        paymentKey: permit2PaymentKey({ chainId: input.chainId, payer, nonce: auth.nonce }),
+      };
+    },
+    async verifyUpto({ payload, requirements }) {
+      const auth = payload.payload.permit2Authorization;
+      const payer = getAddress(auth.from) as Address;
+      if (getAddress(auth.spender) !== input.uptoProxy) {
+        throw new ServiceError(402, 'Payment spender is not the x402 Permit2 proxy.');
+      }
+      const code = await publicClient.getCode({ address: input.uptoProxy });
+      if (!code || code === '0x') {
+        throw new ServiceError(402, 'Settlement proxy is not deployed.');
+      }
+      await assertFunded({ payer, asset: input.asset, amount: requirements.amount });
+      // The official upto verifier enforces permitted.amount == requirements.amount,
+      // the facilitator witness binding, the signature and the settle simulation.
+      const result = await uptoScheme.verify(
+        payload as unknown as Parameters<typeof uptoScheme.verify>[0],
+        requirements as unknown as Parameters<typeof uptoScheme.verify>[1],
       );
       if (!result.isValid) {
         throw new ServiceError(402, reasonText(result.invalidReason));
@@ -283,10 +402,18 @@ export function createRpcPermit2Facilitator(input: {
       });
       return input.opsSigner.sign({ to: input.proxy, data });
     },
+    async prepareUpto({ payload, amount }) {
+      const data = encodeFunctionData({
+        abi: x402UptoPermit2ProxyABI,
+        functionName: 'settle',
+        args: buildUptoArgs(payload, amount),
+      });
+      return input.opsSigner.sign({ to: input.uptoProxy, data });
+    },
     async broadcast(rawTransaction) {
       await input.opsSigner.sendRawTransaction(rawTransaction);
     },
-    async inspect({ txHash, asset, payTo, payer, amount }) {
+    async inspect({ txHash, asset, payTo, payer, amount, proxy }) {
       const deadline = Date.now() + finalityTimeoutMs;
       const sleep = () => new Promise((resolve) => setTimeout(resolve, finalityPollMs));
       const readReceipt = async (): Promise<TransactionReceipt | null> => {
@@ -330,7 +457,7 @@ export function createRpcPermit2Facilitator(input: {
           payTo,
           payer,
           amount: BigInt(amount),
-          proxy: input.proxy,
+          proxy: proxy ?? input.proxy,
         })
       ) {
         return { ok: false, reason: 'mismatch' };

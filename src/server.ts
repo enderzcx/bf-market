@@ -59,6 +59,12 @@ import {
 } from "./starter-gas.ts";
 import { createOpsSigner, type OpsSigner } from "./ops-signer.ts";
 import { createServiceCatalog, type ServiceCatalog } from "./services.ts";
+import {
+  LLM_MAX_CONTENT_CHARS,
+  LLM_MAX_MAX_TOKENS,
+  meteredUpperBound,
+  type MeteredRequest,
+} from "./llm.ts";
 import { createServiceDiscovery, parseDiscoveryFilter } from "./discovery.ts";
 import { createMcpEndpoint } from "./mcp.ts";
 import { parseAmount } from "./money.ts";
@@ -95,6 +101,7 @@ import {
   createX402Service,
   headerGet,
   PAYMENT_SIGNATURE_HEADER,
+  UPTO_PERMIT2_PROXY,
   type Permit2Facilitator,
   type X402Chain,
   type X402Facilitator,
@@ -118,6 +125,15 @@ export type SettlementApp = {
   store: Store;
   worker: SettlementWorker;
   config: RuntimeConfig;
+};
+
+// Worst-case request a metered service accepts, used to advertise its upper
+// bound in the discovery catalog (the real quote is computed per body).
+const DISCOVERY_MAX_REQUEST: MeteredRequest = {
+  messages: [{ role: "user", content: "x".repeat(LLM_MAX_CONTENT_CHARS) }],
+  maxTokens: LLM_MAX_MAX_TOKENS,
+  inputChars: LLM_MAX_CONTENT_CHARS,
+  inputTokens: BigInt(LLM_MAX_CONTENT_CHARS / 2),
 };
 
 function json(status: number, body: unknown, extra?: HeadersInit): Response {
@@ -479,6 +495,7 @@ export function createApp(opts: {
         asset: getAddress(opts.config.chain.token) as Address,
         permit2: opts.config.permit2!,
         proxy: opts.config.x402Permit2Proxy!,
+        uptoProxy: UPTO_PERMIT2_PROXY,
         opsSigner: opsSigner!,
       }))
     : null;
@@ -497,7 +514,33 @@ export function createApp(opts: {
         store: opts.store,
         config: opts.config,
         catalog: serviceCatalog,
-        requirementsOf: (input) => permit2Facilitator.requirementsOf(input),
+        acceptsFor: (definition, payTo) => {
+          if (definition.pricing.mode === 'metered') {
+            const upperBound = meteredUpperBound(
+              definition.pricing.pricing,
+              DISCOVERY_MAX_REQUEST,
+            );
+            return [
+              permit2Facilitator.uptoRequirementsOf({
+                amount: upperBound.toString(),
+                asset: getAddress(opts.config.chain.token) as Address,
+                payTo,
+              }),
+              permit2Facilitator.requirementsOf({
+                amount: upperBound.toString(),
+                asset: getAddress(opts.config.chain.token) as Address,
+                payTo,
+              }),
+            ];
+          }
+          return [
+            permit2Facilitator.requirementsOf({
+              amount: definition.price.toString(),
+              asset: getAddress(opts.config.chain.token) as Address,
+              payTo,
+            }),
+          ];
+        },
         now,
       })
     : null;
@@ -1020,6 +1063,10 @@ export function createApp(opts: {
             serviceId: definition.serviceId,
             providerAgentId: definition.providerAgentId,
             price: definition.price.toString(),
+            pricing: definition.pricing.mode,
+            ...(definition.pricing.mode === 'metered'
+              ? { modelId: definition.pricing.pricing.modelId }
+              : {}),
             description: definition.description,
             network: opts.config.network.caip2,
             asset: opts.config.network.asset.address,

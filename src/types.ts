@@ -112,9 +112,20 @@ export type ServicePaymentRecord = {
   payer: Address;
   payTo: Address;
   asset: Address;
+  // For metered (upto) payments this is the signed upper bound; for exact it is
+  // the fixed price.
   amount: string;
   nonce: string;
+  scheme: string;
   status: ServicePaymentStatus;
+  // Actual amount charged. Null until the call settles; "0" when the usage
+  // charge rounds to zero.
+  chargedAmount: string | null;
+  // 1 once the payload has produced a delivered result (including a zero
+  // charge); such a payload is never re-invoked or re-settled.
+  consumed: boolean;
+  usageJson: string | null;
+  upstreamRequestId: string | null;
   txHash: Hex | null;
   journal: Hex | null;
   resultJson: string | null;

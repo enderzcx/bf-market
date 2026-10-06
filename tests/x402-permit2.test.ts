@@ -444,6 +444,7 @@ async function manualPayload(input: {
 
 function mockFacilitator(inspect: () => Promise<Permit2ReceiptResult>): Permit2Facilitator {
   return {
+    facilitatorAddress: privateKeyToAccount(OPS_KEY).address,
     async getChainId() {
       return 31337;
     },
@@ -458,6 +459,22 @@ function mockFacilitator(inspect: () => Promise<Permit2ReceiptResult>): Permit2F
         extra: { assetTransferMethod: 'permit2', permit2: PERMIT2_ADDRESS, x402Permit2Proxy: X402_PROXY },
       };
     },
+    uptoRequirementsOf({ amount, asset, payTo }) {
+      return {
+        scheme: 'upto',
+        network: 'eip155:31337',
+        amount,
+        asset: getAddress(asset),
+        payTo: getAddress(payTo),
+        maxTimeoutSeconds: 300,
+        extra: {
+          assetTransferMethod: 'permit2',
+          permit2: PERMIT2_ADDRESS,
+          x402UptoPermit2Proxy: X402_PROXY,
+          facilitatorAddress: privateKeyToAccount(OPS_KEY).address,
+        },
+      };
+    },
     async verify({ payload }) {
       const auth = payload.payload.permit2Authorization;
       return {
@@ -466,7 +483,19 @@ function mockFacilitator(inspect: () => Promise<Permit2ReceiptResult>): Permit2F
         paymentKey: permit2PaymentKey({ chainId: 31337, payer: auth.from, nonce: auth.nonce }),
       };
     },
+    async verifyUpto({ payload }) {
+      const auth = payload.payload.permit2Authorization;
+      return {
+        payer: auth.from,
+        nonce: auth.nonce,
+        paymentKey: permit2PaymentKey({ chainId: 31337, payer: auth.from, nonce: auth.nonce }),
+      };
+    },
+    async assertFunded() {},
     async prepare() {
+      return { rawTransaction: `0x${'ab'.repeat(32)}` as Hex, hash: keccak256(toHex('settle')) };
+    },
+    async prepareUpto() {
       return { rawTransaction: `0x${'ab'.repeat(32)}` as Hex, hash: keccak256(toHex('settle')) };
     },
     async broadcast() {},

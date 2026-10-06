@@ -25,6 +25,7 @@ export function bazaarHttpExtension(definition: ServiceDefinition): Record<strin
           method: 'POST',
           bodyType: 'json',
           body: definition.inputExample,
+          inputSchema: definition.inputSchema,
         },
         output: { type: 'json', example: definition.outputExample },
       },
@@ -76,6 +77,7 @@ function httpSchema(): Record<string, unknown> {
           method: { type: 'string', enum: ['POST', 'PUT', 'PATCH'] },
           bodyType: { type: 'string', enum: ['json', 'form-data', 'text'] },
           body: { type: 'object' },
+          inputSchema: { type: 'object' },
         },
         required: ['type', 'method', 'bodyType', 'body'],
         additionalProperties: false,
@@ -182,11 +184,9 @@ export function createServiceDiscovery(opts: {
   store: Store;
   config: RuntimeConfig;
   catalog: ServiceCatalog;
-  requirementsOf: (input: {
-    amount: string;
-    asset: Address;
-    payTo: Address;
-  }) => X402PaymentRequirements;
+  // Advertised payment options for a service. Metered services list both the
+  // upto and exact options at their worst-case upper bound.
+  acceptsFor: (definition: ServiceDefinition, payTo: Address) => X402PaymentRequirements[];
   now?: () => number;
 }) {
   const now = opts.now ?? Date.now;
@@ -197,11 +197,7 @@ export function createServiceDiscovery(opts: {
   const build = (origin: string, definition: ServiceDefinition, payTo: Address): DiscoveryItem => {
     const provider = opts.store.getAgent(opts.config.chain.chainId, definition.providerAgentId);
     const draft = opts.store.getAgentDraftByAgentId(definition.providerAgentId);
-    const requirements = opts.requirementsOf({
-      amount: definition.price.toString(),
-      asset: getAddress(opts.config.chain.token) as Address,
-      payTo,
-    });
+    const accepts = opts.acceptsFor(definition, payTo);
     const registry = opts.config.identityRegistry;
     const lastUpdated = provider?.createdAt
       ? new Date(provider.createdAt).toISOString()
@@ -210,7 +206,7 @@ export function createServiceDiscovery(opts: {
       resource: serviceUrl(origin, definition.serviceId),
       type: 'http',
       x402Version: X402_VERSION,
-      accepts: [requirements],
+      accepts,
       description: definition.description,
       mimeType: 'application/json',
       lastUpdated,

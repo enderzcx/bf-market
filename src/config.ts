@@ -27,6 +27,9 @@ export const DEFAULT_MATURITY_MS = 60_000;
 export const CHALLENGE_TTL_MS = 5 * 60_000;
 export const BODY_LIMIT = 16 * 1024;
 export const DEFAULT_X402_FACILITATOR_URL = 'https://facilitator.payai.network';
+export const DEFAULT_BEEFAPI_LLM_BASE_URL = 'https://global.beefapi.com';
+export const DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC = 1_000_000n;
+export const DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC = 20_000_000n;
 export const X402_MAX_TIMEOUT_SECONDS = 300;
 export const X402_HEADER_LIMIT = 8 * 1024;
 
@@ -99,6 +102,16 @@ export type RuntimeConfig = {
   servicesRequireApproved: boolean;
   serviceProviderAgentId: string;
   serviceEchoPrice: bigint;
+  // Metered BeefAPI-backed LLM services (M5). Listed only when the switch is on
+  // and the BeefAPI credential is present.
+  llmServicesEnabled: boolean;
+  llmBeefapiBaseUrl: string;
+  llmBeefapiApiKey: string;
+  // Per-payer and global daily caps on actual charges, in USDT atomic units.
+  llmPayerDailyCapAtomic: bigint;
+  llmGlobalDailyCapAtomic: bigint;
+  // Upstream BeefAPI request timeout. Defaults to 60s; tests shorten it.
+  llmRequestTimeoutMs: number;
 };
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -464,6 +477,29 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     opsPrivateKey = null;
   }
 
+  // Metered LLM services read the BeefAPI base URL and key from the
+  // environment. The base URL defaults to the overseas production host; tests
+  // point it at a loopback stub.
+  const llmServicesEnabled = partial.llmServicesEnabled ?? false;
+  const llmBeefapiBaseUrl = partial.llmBeefapiBaseUrl ?? DEFAULT_BEEFAPI_LLM_BASE_URL;
+  const llmBeefapiApiKey = partial.llmBeefapiApiKey ?? '';
+  if (llmServicesEnabled) {
+    let url: URL;
+    try {
+      url = new URL(llmBeefapiBaseUrl);
+    } catch {
+      throw new Error('BEEFAPI_BASE_URL 无效。');
+    }
+    if (url.protocol !== 'https:' && !isLoopbackHost(url.hostname)) {
+      throw new Error('BEEFAPI_BASE_URL 必须是 HTTPS 或本机回环地址。');
+    }
+  }
+  const llmPayerDailyCapAtomic =
+    partial.llmPayerDailyCapAtomic ?? DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC;
+  const llmGlobalDailyCapAtomic =
+    partial.llmGlobalDailyCapAtomic ?? DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC;
+  const llmRequestTimeoutMs = partial.llmRequestTimeoutMs ?? 60_000;
+
   return {
     host,
     port: partial.port ?? DEFAULT_PORT,
@@ -519,6 +555,12 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     servicesRequireApproved: partial.servicesRequireApproved ?? false,
     serviceProviderAgentId: partial.serviceProviderAgentId ?? '0',
     serviceEchoPrice: partial.serviceEchoPrice ?? 1_000_000n,
+    llmServicesEnabled,
+    llmBeefapiBaseUrl,
+    llmBeefapiApiKey,
+    llmPayerDailyCapAtomic,
+    llmGlobalDailyCapAtomic,
+    llmRequestTimeoutMs,
   };
 }
 
@@ -720,6 +762,20 @@ export function loadConfig(opts?: {
     serviceEchoPrice: env.SETTLEMENT_SERVICE_ECHO_PRICE
       ? BigInt(env.SETTLEMENT_SERVICE_ECHO_PRICE)
       : 1_000_000n,
+    llmServicesEnabled: flagEnv(
+      env.SETTLEMENT_LLM_SERVICES_ENABLED,
+      'SETTLEMENT_LLM_SERVICES_ENABLED',
+    ),
+    llmBeefapiBaseUrl: env.BEEFAPI_BASE_URL ?? DEFAULT_BEEFAPI_LLM_BASE_URL,
+    llmBeefapiApiKey: env.BEEFAPI_API_KEY ?? '',
+    llmPayerDailyCapAtomic: weiEnv(
+      env.SETTLEMENT_LLM_PAYER_DAILY_CAP,
+      'SETTLEMENT_LLM_PAYER_DAILY_CAP',
+    ) ?? DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC,
+    llmGlobalDailyCapAtomic: weiEnv(
+      env.SETTLEMENT_LLM_GLOBAL_DAILY_CAP,
+      'SETTLEMENT_LLM_GLOBAL_DAILY_CAP',
+    ) ?? DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC,
   });
 
   if (cfg.source === 'beefapi') {

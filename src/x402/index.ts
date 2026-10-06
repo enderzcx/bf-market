@@ -26,9 +26,10 @@ export {
   permit2PaymentKey,
   permit2ReceiptMatches,
   PERMIT2,
+  UPTO_PERMIT2_PROXY,
 } from "./permit2.ts";
 export type { Permit2Facilitator, Permit2ReceiptResult } from "./permit2.ts";
-export { createPermit2Service, parsePermit2Payload } from "./permit2-service.ts";
+export { createPermit2Service, parsePermit2Payload, parseUptoPayload } from "./permit2-service.ts";
 export type { Permit2CallResult } from "./permit2-service.ts";
 export type {
   X402Chain,
@@ -43,6 +44,10 @@ export type {
   X402ReceiptResult,
   X402SettleResponse,
   X402SettleResult,
+  X402UptoPermit2Authorization,
+  X402UptoPermit2Payload,
+  X402UptoPermit2PaymentPayload,
+  X402UptoPermit2Witness,
 } from "./types.ts";
 export {
   PAYMENT_REQUIRED_HEADER,

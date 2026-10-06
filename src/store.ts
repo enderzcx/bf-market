@@ -188,7 +188,12 @@ function mapServicePayment(row: Record<string, unknown>): ServicePaymentRecord {
     asset: String(row.asset) as Address,
     amount: String(row.amount),
     nonce: String(row.nonce),
+    scheme: row.scheme ? String(row.scheme) : "exact",
     status: status as ServicePaymentStatus,
+    chargedAmount: row.charged_amount == null ? null : String(row.charged_amount),
+    consumed: Number(row.consumed ?? 0) === 1,
+    usageJson: row.usage_json ? String(row.usage_json) : null,
+    upstreamRequestId: row.upstream_request_id ? String(row.upstream_request_id) : null,
     txHash: row.tx_hash ? (String(row.tx_hash) as Hex) : null,
     journal: row.journal ? (String(row.journal) as Hex) : null,
     resultJson: row.result_json ? String(row.result_json) : null,
@@ -386,7 +391,12 @@ export function createStore(opts: {
       asset TEXT NOT NULL,
       amount TEXT NOT NULL,
       nonce TEXT NOT NULL,
+      scheme TEXT NOT NULL DEFAULT 'exact',
       status TEXT NOT NULL CHECK (status IN ('required', 'verified', 'settling', 'settled', 'delivered', 'failed')),
+      charged_amount TEXT,
+      consumed INTEGER NOT NULL DEFAULT 0,
+      usage_json TEXT,
+      upstream_request_id TEXT,
       tx_hash TEXT,
       journal TEXT,
       result_json TEXT,
@@ -396,7 +406,31 @@ export function createStore(opts: {
       UNIQUE (chain_id, payer, nonce)
     );
     CREATE INDEX IF NOT EXISTS service_payments_service ON service_payments(service_id);
+    CREATE TABLE IF NOT EXISTS llm_daily_spend (
+      day TEXT NOT NULL,
+      payer TEXT NOT NULL,
+      charged TEXT NOT NULL,
+      PRIMARY KEY (day, payer)
+    );
   `);
+  // Older local databases predate the metered columns; add them in place so a
+  // running instance keeps its payment history.
+  const servicePaymentColumns = new Set(
+    (db.query(`PRAGMA table_info(service_payments)`).all() as { name: string }[]).map(
+      (row) => row.name,
+    ),
+  );
+  for (const [name, ddl] of [
+    ['scheme', `TEXT NOT NULL DEFAULT 'exact'`],
+    ['charged_amount', 'TEXT'],
+    ['consumed', 'INTEGER NOT NULL DEFAULT 0'],
+    ['usage_json', 'TEXT'],
+    ['upstream_request_id', 'TEXT'],
+  ] as const) {
+    if (!servicePaymentColumns.has(name)) {
+      db.exec(`ALTER TABLE service_payments ADD COLUMN ${name} ${ddl}`);
+    }
+  }
   db.run(
     `INSERT OR IGNORE INTO partner (id, name, wallet, auto_settle, available, pending, paid, consumed)
      VALUES (?, ?, '', 0, 0, 0, 0, 0)`,
@@ -1511,6 +1545,7 @@ export function createStore(opts: {
       asset: Address;
       amount: string;
       nonce: string;
+      scheme?: string;
       createdAt?: number;
     }): ServicePaymentRecord {
       const payer = address(input.payer, "付款地址");
@@ -1525,8 +1560,8 @@ export function createStore(opts: {
         if (byNonce) return mapServicePayment(byNonce);
         const at = input.createdAt ?? now();
         db.run(
-          `INSERT INTO service_payments (payment_key, service_id, chain_id, payer, pay_to, asset, amount, nonce, status, tx_hash, journal, result_json, error, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'required', NULL, NULL, NULL, NULL, ?, ?)`,
+          `INSERT INTO service_payments (payment_key, service_id, chain_id, payer, pay_to, asset, amount, nonce, scheme, status, charged_amount, consumed, usage_json, upstream_request_id, tx_hash, journal, result_json, error, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'required', NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)`,
           [
             input.paymentKey,
             input.serviceId,
@@ -1536,6 +1571,7 @@ export function createStore(opts: {
             asset,
             input.amount,
             input.nonce,
+            input.scheme ?? 'exact',
             at,
             at,
           ],
@@ -1546,16 +1582,40 @@ export function createStore(opts: {
     setServicePaymentStatus(
       paymentKey: string,
       status: ServicePaymentStatus,
-      extra?: { txHash?: Hex | null; journal?: Hex | null; error?: string | null },
+      extra?: {
+        txHash?: Hex | null;
+        journal?: Hex | null;
+        error?: string | null;
+        consumed?: boolean;
+        chargedAmount?: string | null;
+        usageJson?: string | null;
+        upstreamRequestId?: string | null;
+        resultJson?: string | null;
+      },
     ) {
       const result = db.run(
-        `UPDATE service_payments SET status = ?, tx_hash = COALESCE(?, tx_hash), journal = COALESCE(?, journal), error = ?, updated_at = ?
+        `UPDATE service_payments SET
+           status = ?,
+           tx_hash = COALESCE(?, tx_hash),
+           journal = COALESCE(?, journal),
+           error = ?,
+           charged_amount = COALESCE(?, charged_amount),
+           consumed = COALESCE(?, consumed),
+           usage_json = COALESCE(?, usage_json),
+           upstream_request_id = COALESCE(?, upstream_request_id),
+           result_json = COALESCE(?, result_json),
+           updated_at = ?
          WHERE payment_key = ?`,
         [
           status,
           extra?.txHash ?? null,
           extra?.journal ?? null,
           extra?.error ?? null,
+          extra?.chargedAmount ?? null,
+          extra?.consumed === undefined ? null : extra.consumed ? 1 : 0,
+          extra?.usageJson ?? null,
+          extra?.upstreamRequestId ?? null,
+          extra?.resultJson ?? null,
           now(),
           paymentKey,
         ],
@@ -1565,16 +1625,62 @@ export function createStore(opts: {
       }
       return getServicePayment(paymentKey)!;
     },
-    markServicePaymentDelivered(paymentKey: string, resultJson: string) {
+    markServicePaymentDelivered(
+      paymentKey: string,
+      resultJson: string,
+      extra?: { txHash?: Hex | null; chargedAmount?: string | null; consumed?: boolean },
+    ) {
       const result = db.run(
-        `UPDATE service_payments SET status = 'delivered', result_json = ?, error = NULL, updated_at = ?
+        `UPDATE service_payments SET
+           status = 'delivered',
+           result_json = ?,
+           error = NULL,
+           tx_hash = COALESCE(?, tx_hash),
+           charged_amount = COALESCE(?, charged_amount),
+           consumed = ?,
+           updated_at = ?
          WHERE payment_key = ?`,
-        [resultJson, now(), paymentKey],
+        [
+          resultJson,
+          extra?.txHash ?? null,
+          extra?.chargedAmount ?? null,
+          extra?.consumed === false ? 0 : 1,
+          now(),
+          paymentKey,
+        ],
       );
       if (result.changes !== 1) {
         throw new ServiceError(409, "服务付款状态异常。");
       }
       return getServicePayment(paymentKey)!;
+    },
+    // Metered LLM spend tracking, in USDT atomic units. `day` is a UTC date.
+    llmSpendFor(day: string, payer: Address): bigint {
+      const row = db
+        .query(`SELECT charged FROM llm_daily_spend WHERE day = ? AND payer = ?`)
+        .get(day, address(payer, "付款地址")) as { charged: string } | null;
+      return row ? BigInt(row.charged) : 0n;
+    },
+    llmSpendTotal(day: string): bigint {
+      const row = db
+        .query(`SELECT COALESCE(SUM(CAST(charged AS INTEGER)), 0) AS total FROM llm_daily_spend WHERE day = ?`)
+        .get(day) as { total: number | string } | null;
+      return row ? BigInt(row.total) : 0n;
+    },
+    addLlmSpend(day: string, payer: Address, amount: bigint): void {
+      if (amount <= 0n) return;
+      const owner = address(payer, "付款地址");
+      tx(() => {
+        const row = db
+          .query(`SELECT charged FROM llm_daily_spend WHERE day = ? AND payer = ?`)
+          .get(day, owner) as { charged: string } | null;
+        const next = (row ? BigInt(row.charged) : 0n) + amount;
+        db.run(
+          `INSERT INTO llm_daily_spend (day, payer, charged) VALUES (?, ?, ?)
+           ON CONFLICT(day, payer) DO UPDATE SET charged = excluded.charged`,
+          [day, owner, next.toString()],
+        );
+      });
     },
   };
 }
