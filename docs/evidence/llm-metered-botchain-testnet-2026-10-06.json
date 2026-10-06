@@ -1,0 +1,23 @@
+{
+  "milestone": "M5",
+  "network": "botchain-testnet",
+  "chainId": 968,
+  "serverCommit": "e6cad2b",
+  "server": "http://127.0.0.1:4311 (loopback only)",
+  "service": "llm-glm-5-3 (glm-5.3 via BeefAPI global, scheme upto, Permit2)",
+  "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+  "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+  "request": {"prompt": "In one sentence, what is x402?", "max_tokens": 200},
+  "quotedCapAtomic": "655",
+  "usage": {"prompt_tokens": 29, "completion_tokens": 211, "total_tokens": 240},
+  "uncappedCostAtomic": "705",
+  "chargedAtomic": "655",
+  "note": "Upstream returned 211 completion tokens against max_tokens 200, so the charge is capped at the authorized upper bound.",
+  "settlement": {
+    "hash": "0x41b1c9050af7fdd84709257662ee4df3da5f3a7ca30a18de2b3fa11269538f35",
+    "to": "0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002",
+    "finalized": true,
+    "usdtTransfer": "buyer -> provider 0.000655"
+  },
+  "providerUsdtAfter": "0.030655"
+}
