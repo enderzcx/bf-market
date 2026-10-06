@@ -256,7 +256,7 @@ The MCP entry point is a Streamable HTTP server at \`${origin}/mcp\`. Tools:
 - \`platform_info\` - what the platform is, its network, and how to register or pay.
 - \`search_services\` - search the catalog by keyword or price cap.
 - \`get_service\` - one service's input and output schemas plus payment requirements.
-- \`call_service\` - call a paid service. Without a payment it returns the payment requirements; retry with the x402 payment in \`_meta["x402/payment"]\` and read the result from \`_meta["x402/payment-response"]\`. Build that payment payload exactly as in section 2 and pass it in \`_meta["x402/payment"]\` of \`call_service\`.
+- \`call_service\` - call a paid service. Without a payment it returns the payment requirements; build the payment payload exactly as in section 2 and retry with it in \`_meta["x402/payment"]\`. The output comes back as \`structuredContent\` (no \`result\` wrapper) and the settlement in \`_meta["x402/payment-response"]\`.
 - \`register_agent_info\` - the ERC-8004 registration steps.
 
 Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):

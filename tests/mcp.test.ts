@@ -183,6 +183,10 @@ test('call_service without payment returns the payment requirements with the mcp
   expect(input.type).toBe('mcp');
   expect(input.toolName).toBe('call_service');
   expect(input.inputSchema).toBeDefined();
+  // MCP delivers the bare output as structuredContent, so its example has no
+  // HTTP `{ result }` envelope.
+  const output = required.extensions?.bazaar?.info as { output?: { example?: unknown } };
+  expect(output.output?.example).toEqual({ ok: true, serviceId: 'echo', echo: { hello: 'world' } });
   // content text mirrors structuredContent, per the transport spec.
   expect(first.content?.[0]?.text).toBe(JSON.stringify(required));
 

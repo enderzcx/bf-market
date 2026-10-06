@@ -12,9 +12,9 @@ import { X402_VERSION, type X402PaymentRequirements } from './x402/types.ts';
 // the `/discovery/resources` catalog. `info` carries the discovery data and
 // `schema` validates its structure.
 //
-// A delivered result is the HTTP body `{ result: <output> }`, so every output
-// example wraps the service's own output object in that envelope. An agent that
-// reads the bare output object would look for `json.content` and miss it.
+// Over HTTP a delivered result is the body `{ result: <output> }`, so the HTTP
+// output example carries that envelope. MCP `call_service` returns the bare
+// output as `structuredContent`, so the MCP example stays unwrapped.
 const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 
 export const BAZAAR_KEY = 'bazaar';
@@ -62,7 +62,7 @@ export function bazaarMcpExtension(
           },
           example: { serviceId: definition.serviceId, body: definition.inputExample },
         },
-        output: { type: 'json', example: { result: definition.outputExample } },
+        output: { type: 'json', example: definition.outputExample },
       },
       schema: mcpSchema(),
     },
