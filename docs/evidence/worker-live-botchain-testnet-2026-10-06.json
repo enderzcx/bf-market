@@ -1,0 +1,66 @@
+{
+  "milestone": "Cloudflare Worker go-live",
+  "network": "botchain-testnet",
+  "chainId": 968,
+  "server": "https://market.bflabs.app (Cloudflare Worker bf-market, SQLite Durable Object ledger)",
+  "seedImport": {
+    "result": {"ok": true, "agents": 2, "drafts": 2},
+    "secondCall": "HTTP 410"
+  },
+  "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+  "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+  "callsBeforeFixes": {
+    "workerVersion": "a5059fe0-1eda-4885-8f3d-81e907f9b667",
+    "serverCommit": "903058d",
+    "calls": [
+      {
+        "service": "llm-glm-5-3",
+        "result": "HTTP 502, not charged",
+        "cause": "BeefAPI glm-5.3 did not answer within 100 s, also when called directly from a workstation; claude-opus-5-5 and gpt-6-astra answered in about 3 s"
+      },
+      {
+        "service": "echo",
+        "scheme": "exact",
+        "chargedAtomic": "1000000",
+        "settlement": "0x394c4b08cf97fa19291cfe78969f0a0ff436b02eaec02c8a1d20db13e22d942a"
+      },
+      {
+        "service": "llm-claude-opus-5-5",
+        "scheme": "upto",
+        "quotedCapAtomic": "1784",
+        "usage": {"prompt_tokens": 17, "completion_tokens": 96},
+        "chargedAtomic": "796",
+        "settlement": "0x86df207fd8eb51cd9ed429957ee60d9c74a5bec9562e43dc900696d182920cac"
+      }
+    ]
+  },
+  "coldAgentRun": {
+    "setup": "A fresh agent given only the one-line prompt from skill.md and a funded testnet key, no repository access",
+    "firstTry": "llm-glm-5-3, HTTP 502, not charged",
+    "secondTry": {
+      "service": "llm-claude-opus-5-5",
+      "scheme": "upto",
+      "quotedCapAtomic": "472",
+      "chargedAtomic": "45",
+      "settlement": "0x68333ec6c62a8cd0783080b870f75d78edd1bab684d14375fa1301341136c726"
+    },
+    "frictionFixedAfterwards": [
+      "200 body is { result }, but output examples showed the bare object",
+      "metered services also offer exact at the same cap; the docs did not say to pick upto",
+      "the example did not check the response status",
+      "the call URL pattern only appeared inside the example code",
+      "the approve spender wording pointed at the x402 proxies instead of Permit2",
+      "the worst-case price column read like a per-call price",
+      "failed receipts reported the signed cap as charged"
+    ]
+  },
+  "callsAfterFixes": {
+    "workerVersion": "dc34fb6d-318a-45ca-a8f0-cafba7bcc8fa",
+    "checks": [
+      "skill.md example extracted from the live page typechecks under the repo tsconfig and paid echo end to end: 0xf3581b444d14a460b7b4d146a4ea73354cb9ae5051ac4ea0cfbef54feaf832e8",
+      "failed glm-5.3 receipts now report charged 0",
+      "GET /api/stats and PUT /internal/seed return 405 {\"error\":\"Method not allowed.\"}",
+      "/api/stats/public: calls 3, settledUsdt 1000841, payers 1, agents 2 (before the example run)"
+    ]
+  }
+}
