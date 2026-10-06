@@ -51,8 +51,6 @@
     "SETTLEMENT_STARTER_GAS_WEI": "50000000000000000",
     "SETTLEMENT_STARTER_GAS_DAILY_CAP_WEI": "1000000000000000000",
     "SETTLEMENT_STARTER_GAS_BALANCE_THRESHOLD_WEI": "10000000000000000"
-  }
-  // Custom domain is intentionally not configured here; the deploy step adds it,
-  // for example:
-  //   "routes": [{ "pattern": "market.bflabs.app", "custom_domain": true }]
+  },
+  "routes": [{ "pattern": "market.bflabs.app", "custom_domain": true }]
 }
