@@ -4,7 +4,11 @@
   "chainId": 968,
   "server": "https://market.bflabs.app (Cloudflare Worker bf-market, SQLite Durable Object ledger)",
   "seedImport": {
-    "result": {"ok": true, "agents": 2, "drafts": 2},
+    "result": {
+      "ok": true,
+      "agents": 2,
+      "drafts": 2
+    },
     "secondCall": "HTTP 410"
   },
   "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
@@ -28,7 +32,10 @@
         "service": "llm-claude-opus-5-5",
         "scheme": "upto",
         "quotedCapAtomic": "1784",
-        "usage": {"prompt_tokens": 17, "completion_tokens": 96},
+        "usage": {
+          "prompt_tokens": 17,
+          "completion_tokens": 96
+        },
         "chargedAtomic": "796",
         "settlement": "0x86df207fd8eb51cd9ed429957ee60d9c74a5bec9562e43dc900696d182920cac"
       }
@@ -62,5 +69,34 @@
       "GET /api/stats and PUT /internal/seed return 405 {\"error\":\"Method not allowed.\"}",
       "/api/stats/public: calls 3, settledUsdt 1000841, payers 1, agents 2 (before the example run)"
     ]
+  },
+  "budgetChange": {
+    "workerVersion": "673d3561-6acf-4ca0-9f9e-0137fcfab5b5",
+    "serverCommit": "9d55dba",
+    "basis": "BeefAPI production, last 30 days, requests within 12000 prompt / 2200 completion tokens, priced at BF Market rates: single-call max opus $0.036, astra $0.063, glm $0.016; per user-day p99 $3.63, max $9.03; platform-day max $17.23",
+    "perCallQuoteAtomic": {
+      "llm-glm-5-3": "19040",
+      "llm-claude-opus-5-5": "36800",
+      "llm-gpt-6-astra": "69000"
+    },
+    "meteredSchemes": [
+      "upto"
+    ],
+    "dailyCapsAtomic": {
+      "perWallet": "5000000",
+      "platform": "50000000"
+    },
+    "liveCheck": {
+      "service": "llm-gpt-6-astra",
+      "request": "Say hi, max_tokens 20",
+      "usage": {
+        "prompt_tokens": 4248,
+        "completion_tokens": 6
+      },
+      "quotedCapAtomic": "69000",
+      "chargedAtomic": "12834",
+      "settlement": "0x8b1311128488e4a15b9166a385df2633c5cd76637d280686b3879c4465a62d29",
+      "note": "The old request-based quote would have been a few hundred atomic, so the provider would have absorbed most of this cost."
+    }
   }
 }
