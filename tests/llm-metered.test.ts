@@ -114,13 +114,17 @@ function bodyFor(content = 'hello world', maxTokens?: number): Record<string, un
 
 const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
 
-// Mirrors src/llm.ts: ceil(chars/2) prompt tokens, integer retail prices, and a
-// 10% output headroom on the completion allowance in the quoted upper bound.
-function expectedUpperBound(content: string, maxTokens: number): bigint {
-  const inputTokens = BigInt(Math.ceil(content.length / 2));
-  const outputTokens = ceilDiv(BigInt(maxTokens) * 11n, 10n);
-  return ceilDiv(inputTokens * 1_000_000n, 1_000_000n) + ceilDiv(outputTokens * 3_200_000n, 1_000_000n);
+// The 402 quote is fixed per model: ceil(12000 x input price) plus
+// ceil(2200 x output price), independent of the request.
+const QUOTE_INPUT_TOKENS = 12_000n;
+const QUOTE_OUTPUT_TOKENS = 2200n;
+function expectedQuote(inputMicroUsdPerMillion: bigint, outputMicroUsdPerMillion: bigint): bigint {
+  return (
+    ceilDiv(QUOTE_INPUT_TOKENS * inputMicroUsdPerMillion, 1_000_000n) +
+    ceilDiv(QUOTE_OUTPUT_TOKENS * outputMicroUsdPerMillion, 1_000_000n)
+  );
 }
+const GLM_QUOTE = expectedQuote(1_000_000n, 3_200_000n);
 
 function expectedCharge(prompt: number, completion: number): bigint {
   return ceilDiv(BigInt(prompt) * 1_000_000n, 1_000_000n) + ceilDiv(BigInt(completion) * 3_200_000n, 1_000_000n);
@@ -135,8 +139,7 @@ async function fetchOffer(app: ReturnType<typeof buildApp>['app'], body: Record<
     extensions?: { bazaar?: { info?: { input?: Record<string, unknown> } } };
   };
   const upto = required.accepts.find((a) => a.scheme === 'upto')!;
-  const exact = required.accepts.find((a) => a.scheme === 'exact')!;
-  return { res, required, upto, exact };
+  return { res, required, upto };
 }
 
 // Manual upto payload so negative cases can tweak one field at a time.
@@ -231,21 +234,18 @@ async function fundAndApprove(
   await approvePermit2(env, account, amount);
 }
 
-test('the metered 402 quotes an upper bound with upto and exact options', async () => {
+test('the metered 402 offers a single upto option at the fixed quote', async () => {
   const stub = startStub();
   const { app } = await setup({ stub });
-  const { required, upto, exact } = await fetchOffer(app, bodyFor('hello world'));
+  const { required, upto } = await fetchOffer(app, bodyFor('hello world'));
 
-  const upper = expectedUpperBound('hello world', 1000);
-  // 6 input tokens (11 chars / 2) + ceil(1000 * 1.1) = 1100 output tokens.
-  expect(upper).toBe(3526n);
+  expect(GLM_QUOTE).toBe(19040n);
 
   expect(required.x402Version).toBe(2);
-  expect(required.accepts).toHaveLength(2);
+  expect(required.accepts).toHaveLength(1);
   expect(upto.scheme).toBe('upto');
-  expect(upto.amount).toBe(upper.toString());
-  expect(exact.scheme).toBe('exact');
-  expect(exact.amount).toBe(upper.toString());
+  expect(upto.amount).toBe(GLM_QUOTE.toString());
+  expect(required.accepts.some((a) => a.scheme === 'exact')).toBe(false);
   expect((upto.extra as { facilitatorAddress?: string }).facilitatorAddress).toBe(opsAddress);
   expect((upto.extra as { assetTransferMethod?: string }).assetTransferMethod).toBe('permit2');
   expect(getAddress(String(upto.payTo))).toBe(getAddress(privateKeyToAccount(AGENT_KEY).address));
@@ -255,6 +255,15 @@ test('the metered 402 quotes an upper bound with upto and exact options', async 
     | undefined;
   expect(schema?.properties?.messages).toBeDefined();
   expect(stub.calls).toHaveLength(0);
+});
+
+test('the quote is identical for a tiny and a maximal request', async () => {
+  const stub = startStub();
+  const { app } = await setup({ stub });
+  const tiny = await fetchOffer(app, bodyFor('hi', 1));
+  const maximal = await fetchOffer(app, bodyFor('x'.repeat(8000), 2000));
+  expect(tiny.upto.amount).toBe(GLM_QUOTE.toString());
+  expect(maximal.upto.amount).toBe(GLM_QUOTE.toString());
 });
 
 test('upto settles the actual token cost and delivers once', async () => {
@@ -487,32 +496,43 @@ test('a permitted amount that does not match the quote is rejected', async () =>
   expect(stub.calls).toHaveLength(0);
 });
 
-test('the exact option on a metered service charges the full upper bound', async () => {
+test('an exact payload to a metered service is rejected without settling', async () => {
   const stub = startStub();
   const { env, app } = await setup({ stub });
   const buyer = privateKeyToAccount(BUYER_KEY);
   await fundAndApprove(env, buyer, 10_000_000n);
 
   const body = bodyFor('hello world');
-  const { required, exact } = await fetchOffer(app, body);
+  const { required, upto } = await fetchOffer(app, body);
+  // The offer has no exact entry, so synthesize one to build an exact payload.
+  const exactRequired = {
+    ...required,
+    accepts: [{ ...upto, scheme: 'exact' as const, extra: { assetTransferMethod: 'permit2' } }],
+  } as unknown as PaymentRequired;
   const core = new x402Client()
     .setSpendControls(false)
     .register('eip155:31337', new ExactEvmScheme(buyer));
   const client = new x402HTTPClient(core);
-  const payload = await client.createPaymentPayload(required as unknown as PaymentRequired);
+  const payload = await client.createPaymentPayload(exactRequired);
   const encoded = client.encodePaymentSignatureHeader(payload);
 
+  const opsBefore = await env.client.getTransactionCount({ address: opsAddress });
   const payToBefore = await balanceOf(env, privateKeyToAccount(AGENT_KEY).address);
-  const paid = await req(app, PATH, {
+  const rejected = await req(app, PATH, {
     method: 'POST',
     body: JSON.stringify(body),
     paymentSignature: encoded['PAYMENT-SIGNATURE']!,
   });
-  expect(paid.status).toBe(200);
-  const result = (await paid.json()) as { result: { charged: string } };
-  expect(result.result.charged).toBe(exact.amount);
-  const payToAfter = await balanceOf(env, privateKeyToAccount(AGENT_KEY).address);
-  expect(payToAfter - payToBefore).toBe(BigInt(exact.amount));
+  expect(rejected.status).toBe(402);
+  const decoded = decodeOfficialRequired(rejected.headers.get('PAYMENT-REQUIRED')!) as {
+    error: string;
+    accepts: X402PaymentRequirements[];
+  };
+  expect(decoded.error).toBe('This service accepts the upto scheme only.');
+  expect(decoded.accepts.map((a) => a.scheme)).toEqual(['upto']);
+  expect(await env.client.getTransactionCount({ address: opsAddress })).toBe(opsBefore);
+  expect(await balanceOf(env, privateKeyToAccount(AGENT_KEY).address)).toBe(payToBefore);
+  expect(stub.calls).toHaveLength(0);
 });
 
 test('streaming, oversized input and bad max_tokens are rejected before payment', async () => {
@@ -643,7 +663,8 @@ test('the service listing and discovery expose the metered pricing mode', async 
     }>;
   };
   const item = discovery.items.find((i) => i.resource.includes(SERVICE))!;
-  expect(item.accepts.map((a) => a.scheme).sort()).toEqual(['exact', 'upto']);
+  expect(item.accepts.map((a) => a.scheme)).toEqual(['upto']);
+  expect(item.accepts[0]!.amount).toBe(GLM_QUOTE.toString());
   expect(item.extensions.bazaar?.info?.input?.inputSchema).toBeDefined();
 });
 
@@ -665,7 +686,7 @@ test('MCP search, get and call expose the metered quote', async () => {
   const get = (await mcp.call('get_service', { serviceId: SERVICE })).result as {
     structuredContent: { accepts: X402PaymentRequirements[] };
   };
-  expect(get.structuredContent.accepts.map((a) => a.scheme).sort()).toEqual(['exact', 'upto']);
+  expect(get.structuredContent.accepts.map((a) => a.scheme)).toEqual(['upto']);
 
   // call_service carries the body, so the metered quote can be priced.
   const call = (await mcp.call('call_service', {
@@ -677,6 +698,13 @@ test('MCP search, get and call expose the metered quote', async () => {
   };
   expect(call.isError).toBe(true);
   const upto = call.structuredContent.accepts.find((a) => a.scheme === 'upto')!;
-  expect(upto.amount).toBe(expectedUpperBound('hello world', 1000).toString());
+  expect(upto.amount).toBe(GLM_QUOTE.toString());
   expect(stub.calls).toHaveLength(0);
+});
+
+test('the default daily caps are 5 USDT per payer and 50 USDT platform-wide', async () => {
+  const env = await startChain();
+  const { config } = buildApp(env);
+  expect(config.llmPayerDailyCapAtomic).toBe(5_000_000n);
+  expect(config.llmGlobalDailyCapAtomic).toBe(50_000_000n);
 });

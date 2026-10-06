@@ -202,8 +202,8 @@ export function createServiceDiscovery(opts: {
   store: Store;
   config: RuntimeConfig;
   catalog: ServiceCatalog;
-  // Advertised payment options for a service. Metered services list both the
-  // upto and exact options at their worst-case upper bound.
+  // Advertised payment options for a service. Metered services list the upto
+  // option at their fixed quote; fixed-price services list exact.
   acceptsFor: (definition: ServiceDefinition, payTo: Address) => X402PaymentRequirements[];
   now?: () => number;
 }) {

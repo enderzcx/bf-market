@@ -1,14 +1,20 @@
 import { getAddress } from 'viem';
 import type { RuntimeConfig } from './config.ts';
-import { METERED_PRICING, type MeteredPricing } from './llm.ts';
+import {
+  LLM_QUOTE_INPUT_TOKENS,
+  LLM_QUOTE_OUTPUT_TOKENS,
+  METERED_PRICING,
+  meteredUpperBound,
+  type MeteredPricing,
+} from './llm.ts';
 import type { Store } from './store.ts';
 import type { Address, Hex } from './types.ts';
 import { ServiceError } from './types.ts';
 
 // Paid-service catalog. `exact` services charge a fixed price quoted up front;
-// `metered` services quote an upper bound from the request body and settle the
-// actual token cost with the x402 `upto` scheme (M5). The `inputSchema`/
-// `outputSchema` fields feed the x402 Bazaar discovery extension.
+// `metered` services quote a fixed per-call maximum and settle the actual token
+// cost with the x402 `upto` scheme (M5). The `inputSchema`/`outputSchema` fields
+// feed the x402 Bazaar discovery extension.
 export type ServicePricing =
   | { mode: 'exact' }
   | { mode: 'metered'; pricing: MeteredPricing };
@@ -16,8 +22,8 @@ export type ServicePricing =
 export type ServiceDefinition = {
   serviceId: string;
   providerAgentId: string;
-  // Fixed price for exact services. Metered services quote per request, so this
-  // stays 0 and the amount comes from the body.
+  // Fixed price for exact services. Metered services quote the same cap for
+  // every call, so this stays 0 and the amount comes from the pricing table.
   price: bigint;
   pricing: ServicePricing;
   description: string;
@@ -51,11 +57,19 @@ function usd(microUsdPerMillion: bigint): string {
   return (Number(microUsdPerMillion) / 1_000_000).toFixed(2);
 }
 
+function usdt(atomic: bigint): string {
+  const base = 1_000_000n;
+  const whole = atomic / base;
+  const frac = (atomic % base).toString().padStart(6, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : `${whole}.00`;
+}
+
 function meteredDescription(modelId: string, pricing: MeteredPricing): string {
   return [
     `LLM chat completion (model ${modelId}) served through BeefAPI.`,
     `Priced per token: $${usd(pricing.inputMicroUsdPerMillion)} per 1M input tokens and $${usd(pricing.outputMicroUsdPerMillion)} per 1M output tokens, charged in USDT by actual usage.`,
-    'The 402 quotes an upper bound from the prompt estimate plus a 10% margin over max_tokens; the final charge is at most that bound and can be lower or zero.',
+    `The 402 quotes a fixed per-call maximum of ${usdt(meteredUpperBound(pricing))} USDT, the same for every request (the price of ${LLM_QUOTE_INPUT_TOKENS} input and ${LLM_QUOTE_OUTPUT_TOKENS} output tokens). Upstream models add hidden prompt tokens, so the maximum is above a typical call; only the actual usage is charged, at most that maximum and possibly lower or zero.`,
+    'Payment uses the x402 `upto` scheme only.',
     'Input is an OpenAI chat body: {"messages":[{"role","content"}],"max_tokens"?}; total content is at most 8000 characters, max_tokens defaults to 1000 and is capped at 2000.',
     'Non-streaming only: omit stream or set it to false.',
   ].join(' ');

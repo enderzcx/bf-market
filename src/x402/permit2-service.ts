@@ -558,20 +558,16 @@ export function createPermit2Service(opts: {
       throw new ServiceError(500, 'Service pricing is misconfigured.');
     }
     const pricing = definition.pricing.pricing;
-    // The quote depends on the body, so a body-less request cannot be priced.
+    // The quote is fixed per model, so it does not depend on the body; the
+    // request is still parsed here so a malformed body fails before any offer.
     const request = parseMeteredRequest(input.body);
-    const upperBound = meteredUpperBound(pricing, request);
+    const upperBound = meteredUpperBound(pricing);
     const uptoRequirements = opts.facilitator.uptoRequirementsOf({
       amount: upperBound.toString(),
       asset,
       payTo: input.payTo,
     });
-    const exactRequirements = opts.facilitator.requirementsOf({
-      amount: upperBound.toString(),
-      asset,
-      payTo: input.payTo,
-    });
-    const accepts = [uptoRequirements, exactRequirements];
+    const accepts = [uptoRequirements];
     const offer = (error: string): Permit2CallResult =>
       required({
         origin: input.origin,
@@ -583,23 +579,20 @@ export function createPermit2Service(opts: {
 
     if (!input.signatureHeader) return offer('PAYMENT-SIGNATURE header is required');
 
-    let scheme: 'upto' | 'exact';
-    let payload: X402UptoPermit2PaymentPayload | X402Permit2PaymentPayload;
+    let payload: X402UptoPermit2PaymentPayload;
     try {
       const raw = decodePaymentSignatureHeader(input.signatureHeader);
       const acceptedScheme = (asRecord(asRecord(raw).accepted, 'payment requirements').scheme ??
         null) as unknown;
-      if (acceptedScheme === 'upto') {
-        scheme = 'upto';
-        payload = parseUptoPayload(raw, uptoRequirements);
-      } else {
-        scheme = 'exact';
-        payload = parsePermit2Payload(raw, exactRequirements);
+      if (acceptedScheme !== 'upto') {
+        return offer('This service accepts the upto scheme only.');
       }
+      payload = parseUptoPayload(raw, uptoRequirements);
     } catch (err) {
       if (err instanceof ServiceError && err.status === 402) return offer(err.message);
       throw err;
     }
+    const scheme = 'upto' as const;
 
     const authorization = payload.payload.permit2Authorization;
     const payer = authorization.from;
@@ -649,16 +642,10 @@ export function createPermit2Service(opts: {
       ) {
         let verified: { payer: Address; nonce: string };
         try {
-          verified =
-            scheme === 'upto'
-              ? await opts.facilitator.verifyUpto({
-                  payload: payload as X402UptoPermit2PaymentPayload,
-                  requirements: uptoRequirements,
-                })
-              : await opts.facilitator.verify({
-                  payload: payload as X402Permit2PaymentPayload,
-                  requirements: exactRequirements,
-                });
+          verified = await opts.facilitator.verifyUpto({
+            payload,
+            requirements: uptoRequirements,
+          });
         } catch (err) {
           if (err instanceof ServiceError && err.status === 402) return offer(err.message);
           throw err;
@@ -683,109 +670,25 @@ export function createPermit2Service(opts: {
 
       // The upto settle happens after the model call, so re-check the buyer's
       // funds, allowance and remaining deadline right before spending upstream.
-      if (scheme === 'upto') {
-        if (nowSeconds() + LLM_SETTLE_MARGIN_SECONDS > deadline) {
-          return offer('Payment authorization has expired. Sign a new payment.');
-        }
-        try {
-          await opts.facilitator.assertFunded({
-            payer: record.payer,
-            asset,
-            amount: upperBound.toString(),
-          });
-        } catch (err) {
-          if (err instanceof ServiceError && err.status === 402) return offer(err.message);
-          throw err;
-        }
+      if (nowSeconds() + LLM_SETTLE_MARGIN_SECONDS > deadline) {
+        return offer('Payment authorization has expired. Sign a new payment.');
+      }
+      try {
+        await opts.facilitator.assertFunded({
+          payer: record.payer,
+          asset,
+          amount: upperBound.toString(),
+        });
+      } catch (err) {
+        if (err instanceof ServiceError && err.status === 402) return offer(err.message);
+        throw err;
       }
 
       // Per-payer and global daily caps are enforced before the upstream call.
       const day = utcDay();
       const paymentKeyRef = paymentKey;
 
-      // ---- Exact option: charge the full upper bound up front, then deliver.
-      if (scheme === 'exact') {
-        if (record.status === 'verified') {
-          assertDailyLimits(record.payer, upperBound);
-          const signed = await opts.facilitator.prepare({
-            payload: payload as X402Permit2PaymentPayload,
-          });
-          record = opts.store.setServicePaymentStatus(paymentKeyRef, 'settling', {
-            journal: signed.rawTransaction,
-            txHash: signed.hash,
-            error: null,
-          });
-        }
-        if (record.status === 'settling') {
-          try {
-            await opts.facilitator.broadcast(record.journal!);
-          } catch {
-            /* inspect decides */
-          }
-          const inspected = await opts.facilitator.inspect({
-            txHash: record.txHash!,
-            asset,
-            payTo: input.payTo,
-            payer,
-            amount: upperBound.toString(),
-          });
-          if (inspected.ok) {
-            record = opts.store.setServicePaymentStatus(paymentKeyRef, 'settled', {
-              txHash: inspected.txHash,
-              error: null,
-            });
-          } else if (inspected.reason === 'reverted') {
-            opts.store.setServicePaymentStatus(paymentKeyRef, 'failed', {
-              error: 'Payment settlement failed.',
-            });
-            return offer('Payment settlement failed.');
-          } else if (inspected.reason === 'mismatch') {
-            opts.store.setServicePaymentStatus(paymentKeyRef, 'failed', {
-              error: 'Settlement receipt does not match the requirements.',
-            });
-            return {
-              status: 502,
-              body: { error: 'Settlement receipt does not match the requirements.' },
-              headers: {},
-            };
-          } else {
-            return {
-              status: 202,
-              body: { status: 'settling', txHash: record.txHash },
-              headers: {},
-            };
-          }
-        }
-        let call: Awaited<ReturnType<typeof callLlmOnce>>;
-        try {
-          call = await callLlmOnce({ pricing, request, payer: record.payer });
-        } catch {
-          // The exact option settles before delivery, so the payment stands; the
-          // model failure is recorded against the settled row.
-          opts.store.setServicePaymentStatus(paymentKeyRef, 'settled', {
-            error: 'The model provider call failed.',
-          });
-          return {
-            status: 500,
-            body: { error: 'Service temporarily unavailable.' },
-            headers: meteredResponse(record.txHash, record.payer, upperBound),
-          };
-        }
-        const output = meteredOutput(pricing.modelId, call.content, call.usage, upperBound, call.upstreamRequestId);
-        opts.store.addLlmSpend(day, record.payer, upperBound);
-        const delivered = opts.store.markServicePaymentDelivered(
-          paymentKeyRef,
-          JSON.stringify(output),
-          { chargedAmount: upperBound.toString(), consumed: true },
-        );
-        return {
-          status: 200,
-          body: { result: output },
-          headers: meteredResponse(delivered.txHash, delivered.payer, upperBound),
-        };
-      }
-
-      // ---- Upto option: call the model, then settle the actual usage.
+      // Call the model, then settle the actual usage.
       let usage: LlmUsage | null = record.usageJson
         ? (JSON.parse(record.usageJson) as LlmUsage)
         : null;
@@ -843,7 +746,7 @@ export function createPermit2Service(opts: {
 
       if (record.status !== 'settling') {
         const signed = await opts.facilitator.prepareUpto({
-          payload: payload as X402UptoPermit2PaymentPayload,
+          payload,
           amount: charged.toString(),
         });
         record = opts.store.setServicePaymentStatus(paymentKeyRef, 'settling', {

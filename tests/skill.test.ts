@@ -141,10 +141,9 @@ test('skill.md is precise about results, schemes, approvals and charges', async 
   expect(md).toContain('{ "result": <output> }');
   expect(md).toContain('read `json.result`');
 
-  // Metered services offer upto first, plus an exact fallback at the cap.
-  expect(md).toContain('Choose `upto`');
-  expect(md).toContain('`exact` is a fallback');
-  expect(md).toContain('settles the full quoted cap');
+  // Metered services offer upto only; fixed-price services offer exact.
+  expect(md).toContain('A metered service offers one option, `upto`');
+  expect(md).toContain('A fixed-price service offers `exact`');
 
   // The ERC-20 approve spender is Permit2 itself, never a proxy.
   expect(md).toContain('The ERC-20 `approve` target is Permit2 itself');
@@ -164,9 +163,10 @@ test('skill.md is precise about results, schemes, approvals and charges', async 
   expect(md).toContain('result.charged');
   expect(md).toContain('/api/receipts');
 
-  // The metered cap is the worst case; the 402 amount is authoritative.
-  expect(md).toContain('Max price (worst case)');
-  expect(md).toContain('The 402 amount is the authoritative quote');
+  // The metered quote is fixed, and the daily limits come from config.
+  expect(md).toContain('Quote per call (max)');
+  expect(md).toContain('the same fixed maximum for every request');
+  expect(md).toContain('at most 5.00 USDT per wallet and 50.00 USDT platform-wide');
 
   // Install command and the tested client versions.
   expect(md).toContain('bun add viem @x402/core @x402/evm');

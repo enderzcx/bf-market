@@ -26,6 +26,17 @@ export const LLM_REQUEST_TIMEOUT_MS = 60_000;
 // so a slow model call can still be settled before the signature expires.
 export const LLM_SETTLE_MARGIN_SECONDS = 90;
 
+// The 402 quote is a fixed per-model maximum, the same for every request.
+// Upstream models add hidden prompt tokens (system prompts, tool scaffolding)
+// that a client-side estimate cannot see, so a quote keyed to the request body
+// undercounts and the provider absorbs the difference. `upto` settles only the
+// actual usage, so a cap above the real cost never costs the buyer more than
+// the call used. The input allowance covers a realistic hidden prefix; the
+// output allowance is the largest request (LLM_MAX_MAX_TOKENS) plus 10%,
+// computed with integer math so 1.1 never rounds up from floating point.
+export const LLM_QUOTE_INPUT_TOKENS = 12_000n;
+export const LLM_QUOTE_OUTPUT_TOKENS = (BigInt(LLM_MAX_MAX_TOKENS) * 11n + 9n) / 10n;
+
 // Overseas retail prices (USD per 1M tokens): input / output.
 export const METERED_PRICING: Record<string, MeteredPricing> = {
   'glm-5.3': {
@@ -50,11 +61,6 @@ export type MeteredMessage = { role: string; content: string };
 export type MeteredRequest = {
   messages: MeteredMessage[];
   maxTokens: number;
-  inputChars: number;
-  // Conservative prompt estimate: one token per two characters, rounded up.
-  // Retail tokenizers average ~4 English chars/token and ~1-2 CJK chars/token,
-  // so `chars / 2` never undercounts the billable prompt for either script.
-  inputTokens: bigint;
 };
 
 export type LlmUsage = { promptTokens: number; completionTokens: number };
@@ -129,20 +135,15 @@ export function parseMeteredRequest(body: Record<string, unknown>): MeteredReque
     }
     maxTokens = body.max_tokens;
   }
-  const inputTokens = BigInt(Math.ceil(inputChars / 2));
-  return { messages, maxTokens, inputChars, inputTokens };
+  return { messages, maxTokens };
 }
 
-// Upper bound quoted in the 402: worst-case prompt plus the completion
-// allowance with 10% headroom. The upstream request still sends the original
-// max_tokens; the extra margin only widens the signed cap so a model that
-// overshoots max_tokens slightly can still settle inside the quote. The final
-// charge is computed from the upstream usage and is capped at this amount.
-export function meteredUpperBound(pricing: MeteredPricing, request: MeteredRequest): bigint {
-  const outputTokens = ceilDiv(BigInt(request.maxTokens) * 11n, 10n);
+// Fixed 402 quote for a metered service, independent of the request body (see
+// LLM_QUOTE_INPUT_TOKENS). The final charge is the actual usage capped here.
+export function meteredUpperBound(pricing: MeteredPricing): bigint {
   return (
-    tokensCost(request.inputTokens, pricing.inputMicroUsdPerMillion) +
-    tokensCost(outputTokens, pricing.outputMicroUsdPerMillion)
+    tokensCost(LLM_QUOTE_INPUT_TOKENS, pricing.inputMicroUsdPerMillion) +
+    tokensCost(LLM_QUOTE_OUTPUT_TOKENS, pricing.outputMicroUsdPerMillion)
   );
 }
 

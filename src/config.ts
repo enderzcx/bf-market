@@ -28,8 +28,8 @@ export const CHALLENGE_TTL_MS = 5 * 60_000;
 export const BODY_LIMIT = 16 * 1024;
 export const DEFAULT_X402_FACILITATOR_URL = 'https://facilitator.payai.network';
 export const DEFAULT_BEEFAPI_LLM_BASE_URL = 'https://global.beefapi.com';
-export const DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC = 1_000_000n;
-export const DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC = 20_000_000n;
+export const DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC = 5_000_000n;
+export const DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC = 50_000_000n;
 export const X402_MAX_TIMEOUT_SECONDS = 300;
 export const X402_HEADER_LIMIT = 8 * 1024;
 

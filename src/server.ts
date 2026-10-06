@@ -59,12 +59,7 @@ import {
 } from "./starter-gas.ts";
 import { createOpsSigner, type OpsSigner } from "./ops-signer.ts";
 import { createServiceCatalog, type ServiceCatalog } from "./services.ts";
-import {
-  LLM_MAX_CONTENT_CHARS,
-  LLM_MAX_MAX_TOKENS,
-  meteredUpperBound,
-  type MeteredRequest,
-} from "./llm.ts";
+import { meteredUpperBound } from "./llm.ts";
 import { createServiceDiscovery, parseDiscoveryFilter } from "./discovery.ts";
 import { buildLlmsTxt, buildSkillMarkdown } from "./skill.ts";
 import { createMcpEndpoint } from "./mcp.ts";
@@ -127,15 +122,6 @@ export type SettlementApp = {
   store: Store;
   worker: SettlementWorker;
   config: RuntimeConfig;
-};
-
-// Worst-case request a metered service accepts, used to advertise its upper
-// bound in the discovery catalog (the real quote is computed per body).
-const DISCOVERY_MAX_REQUEST: MeteredRequest = {
-  messages: [{ role: "user", content: "x".repeat(LLM_MAX_CONTENT_CHARS) }],
-  maxTokens: LLM_MAX_MAX_TOKENS,
-  inputChars: LLM_MAX_CONTENT_CHARS,
-  inputTokens: BigInt(LLM_MAX_CONTENT_CHARS / 2),
 };
 
 function json(status: number, body: unknown, extra?: HeadersInit): Response {
@@ -523,17 +509,9 @@ export function createApp(opts: {
         catalog: serviceCatalog,
         acceptsFor: (definition, payTo) => {
           if (definition.pricing.mode === 'metered') {
-            const upperBound = meteredUpperBound(
-              definition.pricing.pricing,
-              DISCOVERY_MAX_REQUEST,
-            );
+            const upperBound = meteredUpperBound(definition.pricing.pricing);
             return [
               permit2Facilitator.uptoRequirementsOf({
-                amount: upperBound.toString(),
-                asset: getAddress(opts.config.chain.token) as Address,
-                payTo,
-              }),
-              permit2Facilitator.requirementsOf({
                 amount: upperBound.toString(),
                 asset: getAddress(opts.config.chain.token) as Address,
                 payTo,

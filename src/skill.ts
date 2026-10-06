@@ -3,8 +3,9 @@ import {
   LLM_DEFAULT_MAX_TOKENS,
   LLM_MAX_CONTENT_CHARS,
   LLM_MAX_MAX_TOKENS,
+  LLM_QUOTE_INPUT_TOKENS,
+  LLM_QUOTE_OUTPUT_TOKENS,
   meteredUpperBound,
-  type MeteredRequest,
 } from './llm.ts';
 import type { ServiceCatalog, ServiceDefinition } from './services.ts';
 import { UPTO_PERMIT2_PROXY } from './x402/index.ts';
@@ -12,13 +13,6 @@ import { UPTO_PERMIT2_PROXY } from './x402/index.ts';
 // Agent-facing instructions. Every value comes from the running config and the
 // live catalog, so a network change or a newly listed service is reflected on
 // the next request. No keys, no internal paths.
-
-const MAX_REQUEST: MeteredRequest = {
-  messages: [{ role: 'user', content: 'x'.repeat(LLM_MAX_CONTENT_CHARS) }],
-  maxTokens: LLM_MAX_MAX_TOKENS,
-  inputChars: LLM_MAX_CONTENT_CHARS,
-  inputTokens: BigInt(LLM_MAX_CONTENT_CHARS / 2),
-};
 
 // The copyable prompt shown at the top of skill.md and on the market page. Keep
 // both copies identical.
@@ -39,7 +33,7 @@ function usd(microUsdPerMillion: bigint): string {
 
 function priceCapOf(definition: ServiceDefinition): bigint {
   return definition.pricing.mode === 'metered'
-    ? meteredUpperBound(definition.pricing.pricing, MAX_REQUEST)
+    ? meteredUpperBound(definition.pricing.pricing)
     : definition.price;
 }
 
@@ -50,7 +44,7 @@ function serviceRow(definition: ServiceDefinition): string {
     return [
       `| \`${definition.serviceId}\` | ${pricing.modelId} | metered (x402 \`upto\`) | ${cap} USDT |`,
       ` total input <= ${LLM_MAX_CONTENT_CHARS} chars; max_tokens <= ${LLM_MAX_MAX_TOKENS} (default ${LLM_DEFAULT_MAX_TOKENS}) |`,
-      ` up to ceil(max_tokens x 1.1) completion tokens |`,
+      ` fixed quote up to ${LLM_QUOTE_OUTPUT_TOKENS} completion tokens |`,
       ` input $${usd(pricing.inputMicroUsdPerMillion)} / 1M tokens, output $${usd(pricing.outputMicroUsdPerMillion)} / 1M tokens |`,
     ].join('');
   }
@@ -67,7 +61,7 @@ function serviceTable(catalog: ServiceCatalog): string {
     return 'No service is listed right now. Check the live catalog at `/discovery/resources`.';
   }
   return [
-    '| Service ID | Model | Pricing | Max price (worst case) | Input limits | Output limits | Rates |',
+    '| Service ID | Model | Pricing | Quote per call (max) | Input limits | Output limits | Rates |',
     '| --- | --- | --- | --- | --- | --- | --- |',
     ...rows,
   ].join('\n');
@@ -97,6 +91,8 @@ export function buildSkillMarkdown(input: {
   const exactProxy = config.x402Permit2Proxy ?? '(not configured on this network)';
   const uptoProxy = UPTO_PERMIT2_PROXY;
   const registry = config.identityRegistry ?? '(no identity registry on this network)';
+  const payerDaily = formatUsdt(config.llmPayerDailyCapAtomic);
+  const globalDaily = formatUsdt(config.llmGlobalDailyCapAtomic);
 
   const starterGas = config.starterGasEnabled
     ? [
@@ -130,8 +126,8 @@ Any wallet can pay for a service without registering. A provider registers an on
 A wallet signature is the identity, so there is no account and no login. The shortest path:
 
 1. Send a POST request to \`${origin}/api/services/{serviceId}/call\` with a JSON body (the service table in section 6 has the id and body shape). The \`resource\` field of \`/discovery/resources\` is the authoritative URL for a service.
-2. The server answers \`402 Payment Required\` with a \`PAYMENT-REQUIRED\` header. Decode it to read \`accepts\` (the payment options), \`resource.url\` and the quoted \`amount\`. That 402 amount is authoritative: for a small request it is much lower than the worst-case cap in section 6.
-3. A metered service offers two options at the same quoted amount: \`upto\` first, then \`exact\`. Choose \`upto\` so only the actual usage settles. \`exact\` is a fallback for exact-only clients and settles the full quoted cap even when the call uses less. Fixed-price services offer \`exact\` only.
+2. The server answers \`402 Payment Required\` with a \`PAYMENT-REQUIRED\` header. Decode it to read \`accepts\` (the payment options), \`resource.url\` and the quoted \`amount\`. For a metered service that amount is the fixed per-call maximum in section 6; the charge is the actual usage at or below it.
+3. A metered service offers one option, \`upto\`, which settles only the actual usage. A fixed-price service offers \`exact\` and charges the fixed quoted price.
 4. Approve Permit2 once for ${asset.symbol}. The ERC-20 \`approve\` target is Permit2 itself (\`${permit2}\`); the x402 proxies in the table below are not approve targets, they only appear inside the signed Permit2 authorization. Register \`UptoEvmScheme\` for metered services and \`ExactEvmScheme\` for fixed-price services with the official x402 v2 client (\`@x402/core\` + \`@x402/evm\`).
 5. Resend the same request with the \`PAYMENT-SIGNATURE\` header.
 6. Check the response status. A \`200\` body is \`{ "result": <output> }\`, so read \`json.result\` (the output examples show the inner object). A \`502\` with \`{"error":"The model provider call failed. You were not charged."}\` settled nothing: retry or pick another service.
@@ -203,8 +199,8 @@ const core = new x402Client()
   .register(\`eip155:\${CHAIN_ID}\`, new UptoEvmScheme(account));
 const client = new x402HTTPClient(core);
 const required = client.getPaymentRequiredResponse((name) => first.headers.get(name));
-// Both metered options quote the same cap. Prefer upto so only the actual
-// usage settles; exact would settle the full cap.
+// Metered services offer upto; fixed-price services offer exact. Prefer upto
+// when it is present so only the actual usage settles.
 const option = required.accepts.find((a) => a.scheme === 'upto') ?? required.accepts[0]!;
 
 const asset = getAddress(option.asset);
@@ -274,7 +270,9 @@ Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):
 
 ## 6. Services
 
-Price cap for a metered service: \`ceil(input_tokens x input_price) + ceil(ceil(max_tokens x 1.1) x output_price)\`, where \`input_tokens = ceil(total_input_chars / 2)\`. The "Max price (worst case)" column is that cap at ${LLM_MAX_CONTENT_CHARS} input chars and \`max_tokens\` ${LLM_MAX_MAX_TOKENS}, the largest request allowed - a real call usually quotes far less. The 402 amount is the authoritative quote for your request. With \`upto\` the final charge is the actual usage and never exceeds the quote.
+Quote per call for a metered service: \`ceil(${LLM_QUOTE_INPUT_TOKENS} input tokens x input_price) + ceil(${LLM_QUOTE_OUTPUT_TOKENS} output tokens x output_price)\`, the same fixed maximum for every request. Upstream models add hidden prompt tokens that the request does not show, so the quote sits above a typical call; with \`upto\` only the actual usage is charged, so the maximum costs nothing extra. The "Quote per call (max)" column shows it per model, and the 402 \`amount\` is that same fixed quote.
+
+Daily limits, read from config: at most ${payerDaily} USDT per wallet and ${globalDaily} USDT platform-wide per UTC day. Hitting either returns \`429\` with \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\`, and nothing is settled.
 
 ${serviceTable(catalog)}
 

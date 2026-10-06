@@ -193,7 +193,7 @@ export function createMcpEndpoint(opts: {
       '',
       'Providers must register an ERC-8004 identity to list services and receive payments; buyers can pay without registering.',
       'To register, call register_agent_info for the steps.',
-      'Metered services (for example the LLM chat services) quote an upper bound with the x402 `upto` scheme and settle the actual token usage, which is at most that bound and can be lower or zero. Fixed-price services use the x402 `exact` scheme and charge the quoted price. Both settle through Permit2.',
+      'Metered services (for example the LLM chat services) quote a fixed per-call maximum with the x402 `upto` scheme and settle only the actual usage, at or below that maximum and possibly zero. Fixed-price services use the x402 `exact` scheme and charge the fixed quoted price. Both settle through Permit2.',
       'To pay, approve Permit2 once and then sign for each call; funds go directly to the provider payout address.',
       'To find a service, use search_services, then get_service for details, then call_service.',
     ];
