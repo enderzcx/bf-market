@@ -139,13 +139,13 @@ function mapX402Order(row: Record<string, unknown>): X402OrderRecord {
 function mapAgentDraft(row: Record<string, unknown>): AgentDraftRecord {
   const role = String(row.role);
   if (!AGENT_ROLES.has(role as AgentRole)) {
-    throw new ServiceError(500, "代理草稿状态异常。");
+    throw new ServiceError(500, "The agent draft is in an unexpected state.");
   }
   let profile: AgentProfile;
   try {
     profile = JSON.parse(String(row.profile_json)) as AgentProfile;
   } catch {
-    throw new ServiceError(500, "代理草稿状态异常。");
+    throw new ServiceError(500, "The agent draft is in an unexpected state.");
   }
   return {
     draftId: String(row.draft_id),
@@ -163,7 +163,7 @@ function mapAgent(row: Record<string, unknown>): AgentRecord {
   const role = String(row.role);
   const listed = String(row.listed);
   if (!AGENT_ROLES.has(role as AgentRole) || !LISTED_STATUSES.has(listed as ListedStatus)) {
-    throw new ServiceError(500, "代理记录状态异常。");
+    throw new ServiceError(500, "The agent record is in an unexpected state.");
   }
   return {
     chainId: Number(row.chain_id),
@@ -182,7 +182,7 @@ function mapAgent(row: Record<string, unknown>): AgentRecord {
 function mapStarterGas(row: Record<string, unknown>): StarterGasRecord {
   const status = String(row.status);
   if (!STARTER_GAS_STATUSES.has(status as StarterGasStatus)) {
-    throw new ServiceError(500, "启动 gas 状态异常。");
+    throw new ServiceError(500, "The starter gas grant is in an unexpected state.");
   }
   return {
     address: String(row.address) as Address,
@@ -200,7 +200,7 @@ function mapStarterGas(row: Record<string, unknown>): StarterGasRecord {
 function mapServicePayment(row: Record<string, unknown>): ServicePaymentRecord {
   const status = String(row.status);
   if (!SERVICE_PAYMENT_STATUSES.has(status as ServicePaymentStatus)) {
-    throw new ServiceError(500, "服务付款状态异常。");
+    throw new ServiceError(500, "The service payment is in an unexpected state.");
   }
   return {
     paymentKey: String(row.payment_key) as Hex,
@@ -379,7 +379,7 @@ export function createStore(opts: {
   }): AgentDraftRecord => {
     const owner = address(input.address, "代理地址");
     if (!AGENT_ROLES.has(input.role)) {
-      throw new ServiceError(400, "代理角色无效。");
+      throw new ServiceError(400, "Invalid agent role.");
     }
     db.run(
       `INSERT INTO agent_drafts (draft_id, address, role, profile_json, created_at, registered_agent_id)
@@ -403,7 +403,7 @@ export function createStore(opts: {
     if (result.changes !== 1) {
       const existing = getAgentDraft(draftId);
       if (!existing || existing.registeredAgentId !== agentId) {
-        throw new ServiceError(409, "草稿状态异常。");
+        throw new ServiceError(409, "The draft is in an unexpected state.");
       }
     }
   };
@@ -425,7 +425,7 @@ export function createStore(opts: {
     const existing = getAgent(input.chainId, input.agentId);
     if (existing) {
       if (existing.owner.toLowerCase() !== owner.toLowerCase()) {
-        throw new ServiceError(409, "该 agentId 已绑定其他所有者。");
+        throw new ServiceError(409, "This agentId is already bound to a different owner.");
       }
       return existing;
     }
@@ -983,7 +983,7 @@ export function createStore(opts: {
         [sessionId],
       );
       if (result.changes !== 1)
-        throw new ServiceError(409, "验证信息已使用，请重新发起。");
+        throw new ServiceError(409, "This challenge was already used. Request a new one.");
     },
     getOrderSnapshot(requestId: string) {
       const row = db
@@ -1529,7 +1529,7 @@ export function createStore(opts: {
         ],
       );
       if (result.changes !== 1) {
-        throw new ServiceError(409, "服务付款状态异常。");
+        throw new ServiceError(409, "The service payment is in an unexpected state.");
       }
       return getServicePayment(paymentKey)!;
     },
@@ -1558,7 +1558,7 @@ export function createStore(opts: {
         ],
       );
       if (result.changes !== 1) {
-        throw new ServiceError(409, "服务付款状态异常。");
+        throw new ServiceError(409, "The service payment is in an unexpected state.");
       }
       return getServicePayment(paymentKey)!;
     },

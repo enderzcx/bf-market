@@ -206,7 +206,7 @@ export function securityHeaders(): Record<string, string> {
 
 export function parseAddress(value: unknown): Address {
   if (typeof value !== 'string' || !isAddress(value, { strict: false })) {
-    throw new ServiceError(400, '钱包地址无效。');
+    throw new ServiceError(400, 'Invalid wallet address.');
   }
   return getAddress(value) as Address;
 }
@@ -270,7 +270,7 @@ export function issueChallenge(input: {
 
 export async function recoverBoundAddress(message: string, signature: unknown): Promise<Address> {
   if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]+$/.test(signature)) {
-    throw new ServiceError(400, '签名无效。');
+    throw new ServiceError(400, 'Invalid signature.');
   }
   try {
     const recovered = await recoverMessageAddress({
@@ -279,6 +279,6 @@ export async function recoverBoundAddress(message: string, signature: unknown): 
     });
     return getAddress(recovered) as Address;
   } catch {
-    throw new ServiceError(400, '签名无效。');
+    throw new ServiceError(400, 'Invalid signature.');
   }
 }

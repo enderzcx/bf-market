@@ -65,47 +65,47 @@ async function readBodyText(req: Request): Promise<string> {
   if (lengthHeader != null && lengthHeader !== '') {
     const length = Number(lengthHeader);
     if (!Number.isFinite(length) || length < 0) {
-      throw new ServiceError(400, '请求内容无效。');
+      throw new ServiceError(400, 'Invalid request body.');
     }
     if (length > MAX_BODY_BYTES) {
-      throw new ServiceError(413, '请求内容过大。');
+      throw new ServiceError(413, 'Request body is too large.');
     }
   }
   const buffer = await req.arrayBuffer();
   if (buffer.byteLength > MAX_BODY_BYTES) {
-    throw new ServiceError(413, '请求内容过大。');
+    throw new ServiceError(413, 'Request body is too large.');
   }
   return new TextDecoder().decode(buffer);
 }
 
 function requireString(value: unknown, label: string, max: number): string {
   if (typeof value !== 'string') {
-    throw new ServiceError(400, `${label} 必须是文本。`);
+    throw new ServiceError(400, `${label} must be a string.`);
   }
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > max) {
-    throw new ServiceError(400, `${label} 长度必须在 1 到 ${max} 之间。`);
+    throw new ServiceError(400, `${label} must be between 1 and ${max} characters.`);
   }
   return trimmed;
 }
 
 function parseAddress(value: unknown, label: string): Address {
   if (typeof value !== 'string' || !isAddress(value, { strict: false })) {
-    throw new ServiceError(400, `${label} 地址无效。`);
+    throw new ServiceError(400, `${label} is not a valid address.`);
   }
   return getAddress(value) as Address;
 }
 
 function parseRole(value: unknown): AgentRole {
   if (typeof value !== 'string' || !ROLES.has(value as AgentRole)) {
-    throw new ServiceError(400, 'role 无效。');
+    throw new ServiceError(400, 'Invalid role.');
   }
   return value as AgentRole;
 }
 
 function parseListed(value: unknown): ListedStatus {
   if (typeof value !== 'string' || !LISTED.has(value as ListedStatus)) {
-    throw new ServiceError(400, 'listed 无效。');
+    throw new ServiceError(400, 'Invalid listed status.');
   }
   return value as ListedStatus;
 }
@@ -113,7 +113,7 @@ function parseListed(value: unknown): ListedStatus {
 function parseAgentId(value: unknown, label: string): string {
   const id = requireString(value, label, 78);
   if (!AGENT_ID_RE.test(id)) {
-    throw new ServiceError(400, `${label} 必须是数字串。`);
+    throw new ServiceError(400, `${label} must be a numeric string.`);
   }
   return id;
 }
@@ -121,7 +121,7 @@ function parseAgentId(value: unknown, label: string): string {
 function parseOptionalNumber(value: unknown, label: string): number | undefined {
   if (value == null) return undefined;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new ServiceError(400, `${label} 必须是非负整数。`);
+    throw new ServiceError(400, `${label} must be a non-negative integer.`);
   }
   return value;
 }
@@ -132,35 +132,35 @@ function parseUri(value: unknown, label: string): string {
   try {
     url = new URL(uri);
   } catch {
-    throw new ServiceError(400, `${label} 必须是合法 URL。`);
+    throw new ServiceError(400, `${label} must be a valid URL.`);
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new ServiceError(400, `${label} 必须是 http(s) URL。`);
+    throw new ServiceError(400, `${label} must be an http(s) URL.`);
   }
   return uri;
 }
 
 function parseRecords(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value)) {
-    throw new ServiceError(400, `${label} 必须是数组。`);
+    throw new ServiceError(400, `${label} must be an array.`);
   }
   if (value.length > MAX_RECORDS) {
-    throw new ServiceError(400, `${label} 最多 ${MAX_RECORDS} 条。`);
+    throw new ServiceError(400, `${label} must contain at most ${MAX_RECORDS} entries.`);
   }
   return value;
 }
 
 function parseAgent(value: unknown, chainId: number): SeedAgentInput {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ServiceError(400, 'agents 条目无效。');
+    throw new ServiceError(400, 'Invalid agents entry.');
   }
   const row = value as Record<string, unknown>;
   if (row.chainId !== chainId) {
-    throw new ServiceError(400, `chainId 必须等于当前网络 ${chainId}。`);
+    throw new ServiceError(400, `chainId must equal the current network (${chainId}).`);
   }
   const registerTx = requireString(row.registerTx, 'registerTx', 66);
   if (!TX_HASH_RE.test(registerTx)) {
-    throw new ServiceError(400, 'registerTx 无效。');
+    throw new ServiceError(400, 'Invalid registerTx.');
   }
   const blockNumber =
     row.blockNumber == null
@@ -182,12 +182,12 @@ function parseAgent(value: unknown, chainId: number): SeedAgentInput {
 
 function parseDraft(value: unknown): SeedDraftInput {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ServiceError(400, 'drafts 条目无效。');
+    throw new ServiceError(400, 'Invalid drafts entry.');
   }
   const row = value as Record<string, unknown>;
   const draftId = requireString(row.draftId, 'draftId', 32);
   if (!DRAFT_ID_RE.test(draftId)) {
-    throw new ServiceError(400, 'draftId 无效。');
+    throw new ServiceError(400, 'Invalid draftId.');
   }
   const registeredAgentId =
     row.registeredAgentId == null
@@ -211,10 +211,10 @@ function parseSeedBody(raw: string, chainId: number): {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new ServiceError(400, '请求内容无效。');
+    throw new ServiceError(400, 'Invalid request body.');
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new ServiceError(400, '请求内容无效。');
+    throw new ServiceError(400, 'Invalid request body.');
   }
   const body = parsed as Record<string, unknown>;
   const agents = parseRecords(body.agents, 'agents').map((entry) =>
@@ -236,22 +236,22 @@ export function createSeedHandler(deps: {
   return async (req) => {
     try {
       if (req.method !== 'POST') {
-        return json(405, { error: '不支持的请求方法。' });
+        return json(405, { error: 'Method not allowed.' });
       }
       if (!token) {
-        return json(404, { error: '找不到该接口。' });
+        return json(404, { error: 'Endpoint not found.' });
       }
       const provided = bearerToken(req.headers.get('authorization'));
       if (provided == null || !(await constantTimeEqual(provided, token))) {
-        return json(401, { error: '未授权。' });
+        return json(401, { error: 'Unauthorized.' });
       }
       const raw = await readBodyText(req);
       const state = store.seedState();
       if (state.seeded) {
-        return json(410, { error: '身份种子已完成导入。' });
+        return json(410, { error: 'The identity seed was already imported.' });
       }
       if (state.agents > 0 || state.drafts > 0) {
-        return json(409, { error: '账本已有代理数据，拒绝导入。' });
+        return json(409, { error: 'The ledger already has agent data; import refused.' });
       }
       const body = parseSeedBody(raw, chainId);
       const result = store.importSeed(body);
@@ -264,7 +264,7 @@ export function createSeedHandler(deps: {
       if (err instanceof ServiceError) {
         return json(err.status, { error: err.message });
       }
-      return json(500, { error: '身份种子导入失败。' });
+      return json(500, { error: 'The identity seed import failed.' });
     }
   };
 }

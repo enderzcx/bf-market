@@ -296,7 +296,7 @@ export class ServiceError extends Error {
   }
 }
 
-export const PROVIDER_FAILURE = '结算依赖暂时不可用。';
+export const PROVIDER_FAILURE = 'Settlement is temporarily unavailable.';
 
 export function sanitizeError(err: unknown): string {
   if (err instanceof ServiceError) return err.message;

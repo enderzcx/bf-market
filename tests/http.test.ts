@@ -386,6 +386,16 @@ test('pause, transfer, oversized body, and admin run do not leak raw transaction
   expect(huge.status).toBe(413);
 });
 
+test('unsupported methods on public routes return an English 405', async () => {
+  const { app } = harness();
+  const unsupportedMethod = await req(app, '/api/stats', { method: 'PUT' });
+  expect(unsupportedMethod.status).toBe(405);
+  expect(await unsupportedMethod.json()).toEqual({ error: 'Method not allowed.' });
+  const unknownGet = await req(app, '/api/stats');
+  expect(unknownGet.status).toBe(405);
+  expect(await unknownGet.json()).toEqual({ error: 'Method not allowed.' });
+});
+
 test('mutations require JSON content type; chain unreadiness is explicit', async () => {
   const { app, chain } = harness();
   const { sid } = await open(app);

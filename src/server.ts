@@ -158,13 +158,13 @@ function fail(err: unknown): Response {
 async function readJson(req: Request): Promise<Record<string, unknown>> {
   const type = req.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/json")) {
-    throw new ServiceError(415, "请使用 JSON 提交。");
+    throw new ServiceError(415, "Send the request body as JSON.");
   }
   const lengthHeader = req.headers.get("content-length");
   if (lengthHeader != null && lengthHeader !== "") {
     const length = Number(lengthHeader);
     if (!Number.isFinite(length) || length < 0 || length > BODY_LIMIT) {
-      throw new ServiceError(413, "请求内容过大。");
+      throw new ServiceError(413, "Request body is too large.");
     }
   }
   if (!req.body) return {};
@@ -181,7 +181,7 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
       } catch {
         /* ignore */
       }
-      throw new ServiceError(413, "请求内容过大。");
+      throw new ServiceError(413, "Request body is too large.");
     }
     chunks.push(value);
   }
@@ -195,12 +195,12 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new ServiceError(400, "请求内容无效。");
+      throw new ServiceError(400, "Invalid request body.");
     }
     return parsed as Record<string, unknown>;
   } catch (err) {
     if (err instanceof ServiceError) throw err;
-    throw new ServiceError(400, "请求内容无效。");
+    throw new ServiceError(400, "Invalid request body.");
   }
 }
 
@@ -302,7 +302,7 @@ export function createApp(opts: {
   const requireHost = (req: Request) => {
     const host = req.headers.get("host");
     if (!allowedHost(host, opts.config.port, publicOrigin)) {
-      throw new ServiceError(403, "请求主机不被允许。");
+      throw new ServiceError(403, "Request host is not allowed.");
     }
     return host!;
   };
@@ -1000,12 +1000,12 @@ export function createApp(opts: {
         return mcpEndpoint.handle(req, marketOriginOf(host));
       }
       if (req.method !== "GET" && req.method !== "POST") {
-        return json(405, { error: "不支持的请求方法。" });
+        return json(405, { error: "Method not allowed." });
       }
       if (req.method === "GET" && url.pathname === "/healthz") {
         const host = req.headers.get("host");
         if (!healthzHostAllowed(host, opts.config.port, publicOrigin)) {
-          throw new ServiceError(403, "请求主机不被允许。");
+          throw new ServiceError(403, "Request host is not allowed.");
         }
         if (opts.config.payoutsEnabled) return json(200, { ok: true });
         return json(200, {
@@ -1125,7 +1125,7 @@ export function createApp(opts: {
 
       if (!url.pathname.startsWith("/api/")) {
         requireHost(req);
-        return json(404, { error: "找不到该页面。" });
+        return json(404, { error: "Page not found." });
       }
 
       requireHost(req);
@@ -1236,7 +1236,7 @@ export function createApp(opts: {
         return json(200, stats);
       }
       if (req.method !== "POST")
-        return json(405, { error: "不支持的请求方法。" });
+        return json(405, { error: "Method not allowed." });
 
       // Public agent routes: a wallet signature is the identity, so no session
       // and no Origin header are required. They are handled before the
