@@ -55,7 +55,7 @@ function meteredDescription(modelId: string, pricing: MeteredPricing): string {
   return [
     `LLM chat completion (model ${modelId}) served through BeefAPI.`,
     `Priced per token: $${usd(pricing.inputMicroUsdPerMillion)} per 1M input tokens and $${usd(pricing.outputMicroUsdPerMillion)} per 1M output tokens, charged in USDT by actual usage.`,
-    'The 402 quotes an upper bound from the prompt estimate plus max_tokens; the final charge is at most that bound and can be lower or zero.',
+    'The 402 quotes an upper bound from the prompt estimate plus a 10% margin over max_tokens; the final charge is at most that bound and can be lower or zero.',
     'Input is an OpenAI chat body: {"messages":[{"role","content"}],"max_tokens"?}; total content is at most 8000 characters, max_tokens defaults to 1000 and is capped at 2000.',
     'Non-streaming only: omit stream or set it to false.',
   ].join(' ');

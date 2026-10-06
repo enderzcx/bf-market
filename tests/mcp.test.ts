@@ -98,15 +98,20 @@ test('platform_info and register_agent_info return guidance without private key 
   expect(info.content?.[0]?.text).toContain('x402');
   expect(info.content?.[0]?.text).toContain('ERC-8004');
   expect(info.content?.[0]?.text).toContain('Permit2');
+  // Metered pricing is explained with the upto scheme alongside exact.
+  expect(info.content?.[0]?.text).toContain('Metered services');
+  expect(info.content?.[0]?.text).toContain('upto');
+  expect(info.content?.[0]?.text).toContain('exact');
   const structured = info.structuredContent as {
     networks: Array<{ chainId: number; caip2: string }>;
     registry: string;
-    payment: { transferMethod: string };
+    payment: { transferMethod: string; schemes: string[] };
   };
   expect(structured.networks[0]!.chainId).toBe(31337);
   expect(structured.networks[0]!.caip2).toBe('eip155:31337');
   expect(structured.registry).toBe(getAddress(env.registry));
   expect(structured.payment.transferMethod).toBe('permit2');
+  expect(structured.payment.schemes).toEqual(['exact', 'upto']);
 
   const reg = (await client.call('register_agent_info', {})).result as ToolResult;
   const regStructured = reg.structuredContent as {

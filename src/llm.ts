@@ -133,13 +133,16 @@ export function parseMeteredRequest(body: Record<string, unknown>): MeteredReque
   return { messages, maxTokens, inputChars, inputTokens };
 }
 
-// Upper bound quoted in the 402: worst-case prompt plus the full completion
-// allowance. The final charge is computed from the upstream usage and is capped
-// at this amount.
+// Upper bound quoted in the 402: worst-case prompt plus the completion
+// allowance with 10% headroom. The upstream request still sends the original
+// max_tokens; the extra margin only widens the signed cap so a model that
+// overshoots max_tokens slightly can still settle inside the quote. The final
+// charge is computed from the upstream usage and is capped at this amount.
 export function meteredUpperBound(pricing: MeteredPricing, request: MeteredRequest): bigint {
+  const outputTokens = ceilDiv(BigInt(request.maxTokens) * 11n, 10n);
   return (
     tokensCost(request.inputTokens, pricing.inputMicroUsdPerMillion) +
-    tokensCost(BigInt(request.maxTokens), pricing.outputMicroUsdPerMillion)
+    tokensCost(outputTokens, pricing.outputMicroUsdPerMillion)
   );
 }
 

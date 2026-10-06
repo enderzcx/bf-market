@@ -252,6 +252,7 @@ export function buildApp(
     llmPayerDailyCapAtomic?: bigint;
     llmGlobalDailyCapAtomic?: bigint;
     llmRequestTimeoutMs?: number;
+    agentOrigin?: string;
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'settlement-m6-'));
@@ -291,6 +292,7 @@ export function buildApp(
     llmPayerDailyCapAtomic: overrides.llmPayerDailyCapAtomic,
     llmGlobalDailyCapAtomic: overrides.llmGlobalDailyCapAtomic,
     llmRequestTimeoutMs: overrides.llmRequestTimeoutMs,
+    agentOrigin: overrides.agentOrigin,
   });
   const store = createStore({
     path: join(dir, 'db.sqlite'),

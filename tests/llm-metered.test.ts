@@ -114,10 +114,12 @@ function bodyFor(content = 'hello world', maxTokens?: number): Record<string, un
 
 const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
 
-// Mirrors src/llm.ts: ceil(chars/2) prompt tokens, integer retail prices.
+// Mirrors src/llm.ts: ceil(chars/2) prompt tokens, integer retail prices, and a
+// 10% output headroom on the completion allowance in the quoted upper bound.
 function expectedUpperBound(content: string, maxTokens: number): bigint {
   const inputTokens = BigInt(Math.ceil(content.length / 2));
-  return ceilDiv(inputTokens * 1_000_000n, 1_000_000n) + ceilDiv(BigInt(maxTokens) * 3_200_000n, 1_000_000n);
+  const outputTokens = ceilDiv(BigInt(maxTokens) * 11n, 10n);
+  return ceilDiv(inputTokens * 1_000_000n, 1_000_000n) + ceilDiv(outputTokens * 3_200_000n, 1_000_000n);
 }
 
 function expectedCharge(prompt: number, completion: number): bigint {
@@ -235,7 +237,8 @@ test('the metered 402 quotes an upper bound with upto and exact options', async 
   const { required, upto, exact } = await fetchOffer(app, bodyFor('hello world'));
 
   const upper = expectedUpperBound('hello world', 1000);
-  expect(upper).toBe(3206n);
+  // 6 input tokens (11 chars / 2) + ceil(1000 * 1.1) = 1100 output tokens.
+  expect(upper).toBe(3526n);
 
   expect(required.x402Version).toBe(2);
   expect(required.accepts).toHaveLength(2);

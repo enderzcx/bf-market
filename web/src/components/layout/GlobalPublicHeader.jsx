@@ -44,37 +44,42 @@ export const GLOBAL_PUBLIC_NAV_LINKS = [
   },
 ];
 
-const NAV_ITEMS = GLOBAL_PUBLIC_NAV_LINKS.map((item) => ({
-  key: item.itemKey,
-  href: item.to,
-  label: item.text,
-}));
-
 export function currentGlobalPublicNav(pathname = '') {
   if (pathname === '/docs' || pathname.startsWith('/docs/')) return 'docs';
   if (pathname === '/progress') return 'progress';
   if (pathname === '/login') return 'login';
+  if (pathname === '/market') return 'market';
+  if (pathname === '/records') return 'records';
   return '';
 }
 
-export default function GlobalPublicHeader({ pathname = '' }) {
+export default function GlobalPublicHeader({
+  pathname = '',
+  nav = GLOBAL_PUBLIC_NAV_LINKS,
+  labels = GLOBAL_PUBLIC_HEADER_COPY,
+}) {
   const active = currentGlobalPublicNav(pathname);
+  const items = nav.map((item) => ({
+    key: item.itemKey,
+    href: item.to,
+    label: item.text,
+  }));
 
   return (
     <header className='global-public-header'>
       <a
         className='global-public-header-brand'
-        href='/'
-        aria-label={GLOBAL_PUBLIC_HEADER_COPY.brandHome}
+        href={labels.homeHref ?? '/'}
+        aria-label={labels.brandHome}
       >
         <GlobalBrandMark />
-        <span>{GLOBAL_PUBLIC_HEADER_COPY.brand}</span>
+        <span>{labels.brand}</span>
       </a>
       <nav
         className='global-public-header-links'
-        aria-label={GLOBAL_PUBLIC_HEADER_COPY.primaryNavigation}
+        aria-label={labels.primaryNavigation}
       >
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <a
             key={item.key}
             href={item.href}
@@ -84,8 +89,11 @@ export default function GlobalPublicHeader({ pathname = '' }) {
           </a>
         ))}
       </nav>
-      <a className='global-public-header-cta' href='/console'>
-        {GLOBAL_PUBLIC_HEADER_COPY.getStarted}
+      <a
+        className='global-public-header-cta'
+        href={labels.ctaHref ?? '/console'}
+      >
+        {labels.getStarted}
       </a>
     </header>
   );

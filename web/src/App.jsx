@@ -33,6 +33,8 @@ const ConsoleWallet = lazy(() => import('./pages/GlobalConsole/Wallet'));
 const ProgressLab = lazy(() => import('./pages/ProgressLab'));
 const ProgressPage = lazy(() => import('./pages/Progress'));
 const DocsPage = lazy(() => import('./pages/Docs'));
+const MarketPage = lazy(() => import('./pages/Market'));
+const RecordsPage = lazy(() => import('./pages/Records'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function App() {
@@ -53,6 +55,8 @@ function App() {
         <Route path='/progress-lab' element={<ProgressLab />} />
         <Route path='/progress' element={<ProgressPage />} />
         <Route path='/docs' element={<DocsPage />} />
+        <Route path='/market' element={<MarketPage />} />
+        <Route path='/records' element={<RecordsPage />} />
         <Route
           path='/console'
           element={

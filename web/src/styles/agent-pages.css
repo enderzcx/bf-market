@@ -1,0 +1,18 @@
+/* Shared layout for the English agent-facing pages (/market, /records). */
+
+.agent-shell {
+  width: min(1160px, calc(100% - 64px));
+  margin-inline: auto;
+}
+
+@media (max-width: 820px) {
+  .agent-shell {
+    width: min(100% - 40px, 1160px);
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-shell {
+    width: calc(100% - 32px);
+  }
+}

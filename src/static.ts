@@ -4,6 +4,7 @@ type StaticFile = { file: string; type: string };
 const pages = new Set([
   '/', '/index.html', '/login', '/console', '/console/orders',
   '/console/settlements', '/console/wallet', '/docs', '/progress', '/progress-lab',
+  '/market', '/records',
 ]);
 const types: Record<string, string> = {
   js: 'text/javascript; charset=utf-8',

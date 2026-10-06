@@ -40,16 +40,22 @@ const PageLayout = () => {
   const isPublicHome = location.pathname === '/';
   const isAuthPage = location.pathname === '/login';
   const isDocsPage = ['/docs', '/progress', '/progress-lab'].includes(location.pathname);
-  const isPublicChrome = isPublicHome || isAuthPage || isDocsPage;
+  const isEnglishPublic =
+    location.pathname === '/market' || location.pathname === '/records';
+  const isPublicChrome = isPublicHome || isAuthPage || isDocsPage || isEnglishPublic;
   const isConsoleRoute = location.pathname.startsWith('/console');
   const showSider = isConsoleRoute && (!isMobile || drawerOpen);
 
   useEffect(() => {
     document.body.classList.add('global-site-app');
-    document.documentElement.lang = 'zh-CN';
-    document.title = '伙伴中心';
+    document.documentElement.lang = isEnglishPublic ? 'en' : 'zh-CN';
+    document.title = isEnglishPublic ? 'BF Market' : '伙伴中心';
     return () => document.body.classList.remove('global-site-app');
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = isEnglishPublic ? 'en' : 'zh-CN';
+  }, [location.pathname]);
 
   useEffect(() => {
     if (isMobile && drawerOpen && collapsed) {

@@ -66,6 +66,7 @@ import {
   type MeteredRequest,
 } from "./llm.ts";
 import { createServiceDiscovery, parseDiscoveryFilter } from "./discovery.ts";
+import { buildLlmsTxt, buildSkillMarkdown } from "./skill.ts";
 import { createMcpEndpoint } from "./mcp.ts";
 import { parseAmount } from "./money.ts";
 import {
@@ -87,6 +88,7 @@ import {
   type Hex,
   type ListedStatus,
   type PublicOrder,
+  type ServicePaymentRecord,
   type Source,
   type SourceOrder,
   ServiceError,
@@ -553,6 +555,14 @@ export function createApp(opts: {
   const allowInsecureLocal = opts.config.network.name === "local";
   const agentOriginOf = (host: string) =>
     opts.config.agentOrigin ?? originFromHost(host);
+  // Catalog, MCP, skill.md and llms.txt advertise links on the configured
+  // public origin (SETTLEMENT_PUBLIC_ORIGIN) when one is set, so a caller that
+  // reached us over a proxy still gets reachable URLs. Otherwise the request
+  // host is used.
+  const marketOriginOf = (host: string) =>
+    opts.config.agentOrigin ??
+    opts.config.publicOrigin ??
+    originFromHost(host);
 
   const requireRegistry = () => {
     if (!registryChain || !identityRegistry) {
@@ -576,6 +586,69 @@ export function createApp(opts: {
     blockNumber: record.blockNumber,
     createdAt: record.createdAt,
   });
+
+  // Public receipt projection. Never exposes the signature, the signed
+  // journal, upstream request bodies, internal error detail, or the delivered
+  // result payload. Addresses are shown in full so a payer can verify their own
+  // history.
+  const publicReceipt = (record: ServicePaymentRecord) => {
+    const explorer = opts.config.network.explorerUrl.replace(/\/+$/, "");
+    const definition = serviceCatalog.get(record.serviceId);
+    let usage: { promptTokens: number; completionTokens: number } | null = null;
+    if (record.usageJson) {
+      try {
+        const parsed = JSON.parse(record.usageJson) as {
+          promptTokens?: unknown;
+          completionTokens?: unknown;
+        };
+        if (
+          typeof parsed.promptTokens === "number" &&
+          typeof parsed.completionTokens === "number"
+        ) {
+          usage = {
+            promptTokens: parsed.promptTokens,
+            completionTokens: parsed.completionTokens,
+          };
+        }
+      } catch {
+        /* a malformed usage row is reported as no usage */
+      }
+    }
+    return {
+      paymentKey: record.paymentKey,
+      serviceId: record.serviceId,
+      providerAgentId: definition?.providerAgentId ?? null,
+      payer: record.payer,
+      payTo: record.payTo,
+      asset: record.asset,
+      symbol: opts.config.network.asset.symbol,
+      network: opts.config.network.caip2,
+      scheme: record.scheme,
+      status: record.status,
+      createdAt: record.createdAt,
+      // Signed upper bound for metered calls; the fixed price for exact ones.
+      amount: record.amount,
+      // Actual charge; falls back to the authorized amount for exact payments.
+      charged: record.chargedAmount ?? record.amount,
+      usage: usage
+        ? { ...usage, totalTokens: usage.promptTokens + usage.completionTokens }
+        : null,
+      settlement: record.txHash
+        ? {
+            txHash: record.txHash,
+            explorerUrl: explorer ? `${explorer}/tx/${record.txHash}` : null,
+          }
+        : null,
+    };
+  };
+
+  const parseReceiptLimit = (value: string | null): number => {
+    if (value == null || value === "") return 50;
+    if (!/^[0-9]+$/.test(value)) throw new ServiceError(400, "Invalid limit.");
+    const n = Number(value);
+    if (n < 0) throw new ServiceError(400, "Invalid limit.");
+    return Math.min(n, 200);
+  };
 
   const AGENT_CHALLENGE_PURPOSES = new Set(["agent-draft", "starter-gas"] as const);
   type AgentChallengePurpose = "agent-draft" | "starter-gas";
@@ -901,7 +974,7 @@ export function createApp(opts: {
       // an x402 payment payload inside the tool call.
       if (url.pathname === "/mcp") {
         const host = requireHost(req);
-        return mcpEndpoint.handle(req, canonicalOrigin(host, publicOrigin));
+        return mcpEndpoint.handle(req, marketOriginOf(host));
       }
       if (req.method !== "GET" && req.method !== "POST") {
         return json(405, { error: "不支持的请求方法。" });
@@ -985,13 +1058,46 @@ export function createApp(opts: {
       ) {
         const host = requireHost(req);
         if (!discovery) throw new ServiceError(404, "Endpoint not found.");
-        const origin = canonicalOrigin(host, publicOrigin);
+        const origin = marketOriginOf(host);
         const filter = parseDiscoveryFilter(url.searchParams);
         if (url.pathname === "/discovery/search") {
           const query = url.searchParams.get("query") ?? "";
           return json(200, discovery.search(origin, { ...filter, query }));
         }
         return json(200, discovery.list(origin, filter));
+      }
+
+      // Agent-facing instructions, generated from the current network config
+      // and the live catalog. No login and no session cookie.
+      if (req.method === "GET" && url.pathname === "/skill.md") {
+        const host = requireHost(req);
+        return new Response(
+          buildSkillMarkdown({
+            config: opts.config,
+            catalog: serviceCatalog,
+            origin: marketOriginOf(host),
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "text/markdown; charset=utf-8",
+              ...securityHeaders(),
+            },
+          },
+        );
+      }
+      if (req.method === "GET" && url.pathname === "/llms.txt") {
+        const host = requireHost(req);
+        return new Response(
+          buildLlmsTxt({ origin: marketOriginOf(host) }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8",
+              ...securityHeaders(),
+            },
+          },
+        );
       }
 
       if (!url.pathname.startsWith("/api/")) {
@@ -1072,6 +1178,39 @@ export function createApp(opts: {
             asset: opts.config.network.asset.address,
           })),
         });
+      }
+      // Public receipts. The list is scoped to one payer and the payer is
+      // mandatory, so the endpoint cannot be used to enumerate the whole site.
+      if (req.method === "GET" && url.pathname === "/api/receipts") {
+        const payerRaw = url.searchParams.get("payer");
+        if (payerRaw == null || payerRaw === "") {
+          throw new ServiceError(400, "The payer query parameter is required.");
+        }
+        if (!/^0x[0-9a-fA-F]{40}$/.test(payerRaw)) {
+          throw new ServiceError(400, "Invalid payer address.");
+        }
+        const limit = parseReceiptLimit(url.searchParams.get("limit"));
+        const receipts = opts.store
+          .listServicePaymentsByPayer(getAddress(payerRaw), limit)
+          .map(publicReceipt);
+        return json(200, { receipts });
+      }
+      const receiptMatch =
+        req.method === "GET"
+          ? /^\/api\/receipts\/([^/]+)$/.exec(url.pathname)
+          : null;
+      if (receiptMatch) {
+        const key = decodeURIComponent(receiptMatch[1] ?? "");
+        if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+          throw new ServiceError(400, "Invalid payment key.");
+        }
+        const record = opts.store.getServicePayment(key.toLowerCase() as Hex);
+        if (!record) throw new ServiceError(404, "Receipt not found.");
+        return json(200, { receipt: publicReceipt(record) });
+      }
+      if (req.method === "GET" && url.pathname === "/api/stats/public") {
+        const stats = opts.store.publicServiceStats();
+        return json(200, stats);
       }
       if (req.method !== "POST")
         return json(405, { error: "不支持的请求方法。" });

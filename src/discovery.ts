@@ -149,8 +149,22 @@ export type DiscoveryItem = {
   };
 };
 
+export type DiscoveryNetwork = {
+  name: string;
+  displayName: string;
+  chainId: number;
+  caip2: string;
+  explorer: string;
+  asset: string;
+  symbol: string;
+  decimals: number;
+};
+
 export type DiscoveryList = {
   x402Version: number;
+  // Network facts for the same catalog, so a public page can render explorer
+  // links without hard-coding a chain id.
+  network: DiscoveryNetwork;
   items: DiscoveryItem[];
   pagination: { limit: number; offset: number; total: number };
 };
@@ -190,6 +204,17 @@ export function createServiceDiscovery(opts: {
   now?: () => number;
 }) {
   const now = opts.now ?? Date.now;
+
+  const networkInfo = (): DiscoveryNetwork => ({
+    name: opts.config.network.name,
+    displayName: opts.config.network.displayName,
+    chainId: opts.config.network.chainId,
+    caip2: opts.config.network.caip2,
+    explorer: opts.config.network.explorerUrl,
+    asset: opts.config.chain.token,
+    symbol: opts.config.network.asset.symbol,
+    decimals: opts.config.network.asset.decimals,
+  });
 
   const serviceUrl = (origin: string, serviceId: string) =>
     `${origin.replace(/\/+$/, '')}/api/services/${encodeURIComponent(serviceId)}/call`;
@@ -274,6 +299,7 @@ export function createServiceDiscovery(opts: {
       const { page, total, limit, offset } = paginate(items, filter);
       return {
         x402Version: X402_VERSION,
+        network: networkInfo(),
         items: page,
         pagination: { limit, offset, total },
       };
@@ -286,6 +312,7 @@ export function createServiceDiscovery(opts: {
       const { page, total, limit, offset } = paginate(items, filter);
       return {
         x402Version: X402_VERSION,
+        network: networkInfo(),
         resources: page,
         pagination: { limit, offset, total },
       };

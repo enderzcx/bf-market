@@ -549,6 +549,49 @@ export function createStore(opts: {
     return row ? mapServicePayment(row) : null;
   };
 
+  // Public receipt history for one payer. Newest first; the caller caps the
+  // limit so a full-table scan cannot be requested through the public API.
+  const listServicePaymentsByPayer = (
+    payer: string,
+    limit: number,
+  ): ServicePaymentRecord[] => {
+    const rows = db
+      .query(
+        `SELECT * FROM service_payments WHERE payer = ?
+         ORDER BY created_at DESC, payment_key DESC LIMIT ?`,
+      )
+      .all(address(payer, "付款地址"), limit) as Record<string, unknown>[];
+    return rows.map(mapServicePayment);
+  };
+
+  // Aggregate public counters. Paid calls are rows that settled (money moved),
+  // whether or not delivery later completed; the settled total uses the actual
+  // charge and falls back to the authorized amount for exact payments.
+  const publicServiceStats = (): {
+    calls: number;
+    settledUsdt: string;
+    payers: number;
+    agents: number;
+  } => {
+    const paid = db
+      .query(
+        `SELECT COUNT(*) AS n,
+                COALESCE(SUM(CAST(COALESCE(charged_amount, amount) AS INTEGER)), 0) AS total,
+                COUNT(DISTINCT payer) AS payers
+         FROM service_payments WHERE status IN ('settled', 'delivered')`,
+      )
+      .get() as { n: number; total: number | string; payers: number };
+    const agents = db.query(`SELECT COUNT(*) AS n FROM agents`).get() as {
+      n: number;
+    };
+    return {
+      calls: Number(paid.n),
+      settledUsdt: BigInt(paid.total).toString(),
+      payers: Number(paid.payers),
+      agents: Number(agents.n),
+    };
+  };
+
   const getPayout = (id: string): PayoutRecord | null => {
     const row = db
       .query(`SELECT * FROM payouts WHERE id = ?`)
@@ -1534,6 +1577,8 @@ export function createStore(opts: {
       );
     },
     getServicePayment,
+    listServicePaymentsByPayer,
+    publicServiceStats,
     // Creates the payment row on first sight, or returns the existing one for
     // the same (chain, payer, nonce) authorization so a replay never re-settles.
     upsertServicePayment(input: {
