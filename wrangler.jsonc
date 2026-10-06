@@ -1,0 +1,57 @@
+{
+  // BF Market agent platform on Workers + one SQLite-backed Durable Object.
+  // The Worker is stateless; all dynamic requests are forwarded to the single
+  // Ledger object so the ledger and the ops signer stay single-threaded.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bf-market",
+  "main": "worker/index.ts",
+  // Pinned to the newest date the workerd bundled with wrangler 4.143.0
+  // supports (local `wrangler dev` rejects a later date). Bump this to the
+  // deploy date once wrangler is upgraded.
+  "compatibility_date": "2026-10-03",
+  "compatibility_flags": ["nodejs_compat"],
+  // `src/db-bun.ts` and `src/lock.ts` import bun:sqlite for the Bun entry. The
+  // Durable Object injects a ctx.storage.sql-backed Db instead, so the import is
+  // swapped for a shim that throws if it is ever constructed at runtime.
+  "alias": {
+    "bun:sqlite": "./worker/shims/bun-sqlite.ts"
+  },
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Only these paths run Worker logic first; everything else is served from
+    // web/dist with SPA fallback.
+    "run_worker_first": [
+      "/api/*",
+      "/discovery/*",
+      "/mcp",
+      "/skill.md",
+      "/llms.txt",
+      "/registrations/*",
+      "/healthz"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "Ledger", "class_name": "Ledger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }],
+  // Non-secret configuration. Secrets are set with `wrangler secret put`
+  // (SETTLEMENT_OPS_PRIVATE_KEY, BEEFAPI_API_KEY, BEEFAPI_BASE_URL) and are
+  // never stored here; see README.md.
+  "vars": {
+    "SETTLEMENT_NETWORK": "botchain-testnet",
+    "SETTLEMENT_PUBLIC_ORIGIN": "https://market.bflabs.app",
+    "SETTLEMENT_X402_PERMIT2_ENABLED": "true",
+    "SETTLEMENT_LLM_SERVICES_ENABLED": "true",
+    "SETTLEMENT_SERVICES_REQUIRE_APPROVED": "false",
+    "SETTLEMENT_SERVICE_PROVIDER_AGENT_ID": "1",
+    "SETTLEMENT_STARTER_GAS_ENABLED": "true",
+    "SETTLEMENT_STARTER_GAS_WEI": "50000000000000000",
+    "SETTLEMENT_STARTER_GAS_DAILY_CAP_WEI": "1000000000000000000",
+    "SETTLEMENT_STARTER_GAS_BALANCE_THRESHOLD_WEI": "10000000000000000"
+  }
+  // Custom domain is intentionally not configured here; the deploy step adds it,
+  // for example:
+  //   "routes": [{ "pattern": "market.bflabs.app", "custom_domain": true }]
+}

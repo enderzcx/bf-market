@@ -9,3 +9,6 @@ deploy/dist/
 
 web/dist/
 .secrets/
+
+dist-worker/
+.wrangler/

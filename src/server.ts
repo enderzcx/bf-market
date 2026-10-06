@@ -230,7 +230,7 @@ async function loadEvmChain(config: RuntimeConfig): Promise<Chain> {
   });
 }
 
-function createDisabledChain(config: RuntimeConfig): Chain {
+export function createDisabledChain(config: RuntimeConfig): Chain {
   const reason = config.payoutsDisabledReason ?? "出款未启用。";
   const blocked = async (): Promise<never> => {
     throw new ServiceError(503, reason);
@@ -250,6 +250,10 @@ export function createApp(opts: {
   source: Source;
   config: RuntimeConfig;
   publicDir?: string;
+  // Overrides static-file resolution. The Workers entry passes a resolver that
+  // returns null because Workers Assets serves web/dist before the Durable
+  // Object sees a request; the Bun entry keeps the filesystem default.
+  staticFileResolver?: (pathname: string) => { file: string; type: string } | null;
   now?: () => number;
   x402Facilitator?: X402Facilitator;
   x402Chain?: X402Chain;
@@ -262,6 +266,7 @@ export function createApp(opts: {
   assertLoopbackBind(opts.config.host);
   const origin = originOf(opts.config.host, opts.config.port);
   const publicDir = opts.publicDir ?? opts.config.publicDir;
+  const resolveStatic = opts.staticFileResolver ?? staticFileFor;
   const now = opts.now ?? opts.store.now ?? Date.now;
   const authEnabled = opts.config.authEnabled === true;
   const publicOrigin = opts.config.publicOrigin;
@@ -991,7 +996,7 @@ export function createApp(opts: {
           network: opts.config.network.name,
         });
       }
-      const staticFile = req.method === "GET" ? staticFileFor(url.pathname) : null;
+      const staticFile = req.method === "GET" ? resolveStatic(url.pathname) : null;
       if (staticFile) {
         requireHost(req);
         const spec = staticFile;

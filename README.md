@@ -31,6 +31,29 @@ bun run dev
 
 本地链和服务数据都保存在被 Git 忽略的 `.local/`。独占执行钱包不能被其他脚本同时使用。重置本地链时必须同步重置对应的演示账本，不能将旧账本与新链混用。
 
+## Cloudflare Workers 入口
+
+`worker/index.ts` 是第二个入口（Bun 版 `src/server.ts` 保持不变）。无状态 Worker 把所有动态请求转发给唯一的 Durable Object（`idFromName('ledger')`），静态前端 `web/dist` 由 Workers Assets 托管并做 SPA 回退。账本、付款幂等锁、ops 签名 nonce 与启动 gas 额度都集中在这一个对象里，因此保持串行。DO 的存储是 `ctx.storage.sql`，与 Bun 版共用同一套表结构和 SQL（见 `src/db.ts` 的 `Db` 抽象）。
+
+```sh
+bun run dev:worker    # wrangler dev --local
+bun run build:worker  # wrangler deploy --dry-run --outdir dist-worker
+```
+
+本地 `wrangler dev` 的请求主机名需要是公开来源，否则动态接口按设计拒绝：
+
+```sh
+curl -H 'Host: market.bflabs.app' http://localhost:8787/healthz
+```
+
+非明文配置写在 `wrangler.jsonc` 的 `vars`；下列密钥只在部署时用 `wrangler secret put` 写入，不写进仓库：
+
+- `SETTLEMENT_OPS_PRIVATE_KEY`
+- `BEEFAPI_API_KEY`
+- `BEEFAPI_BASE_URL`
+
+`compatibility_date` 目前固定为 `2026-10-03`，这是 `wrangler@4.143.0` 自带 workerd 支持的最新日期；升级 wrangler 后应改回部署当日。自定义域（`routes`）留到部署时再配置。
+
 ## BeefAPI 接入
 
 BeefAPI 适配代码位于独立工作树 `codex/fuji-settlement`。它增加默认关闭、独立鉴权的测试接口。BeefAPI 原账本负责实际可用余额、冻结和已提现记录，结算服务不重复计算或复制可用佣金余额。
