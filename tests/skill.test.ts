@@ -239,6 +239,76 @@ test('receipts list is payer-scoped, redacted, and requires the payer', async ()
   expect((await req(app, '/api/receipts/not-a-key')).status).toBe(400);
 });
 
+test('receipts report only money that actually moved', async () => {
+  const { app, store } = buildBotchainApp();
+  const payer = '0x00000000000000000000000000000000000000cc' as Address;
+  const payTo = '0x00000000000000000000000000000000000000dd' as Address;
+  const seed = (label: string, amount: string, scheme: string) =>
+    store.upsertServicePayment({
+      paymentKey: keccak256(toHex(label)) as Hex,
+      serviceId: 'echo',
+      chainId: 968,
+      payer,
+      payTo,
+      asset: BOTCHAIN_USDT,
+      amount,
+      nonce: label,
+      scheme,
+    });
+
+  // Failed: the upstream call failed and nothing settled, so the receipt must
+  // not report the signed upper bound as a charge.
+  const failed = seed('receipt-failed', '719', 'upto');
+  store.setServicePaymentStatus(failed.paymentKey, 'failed', {
+    error: 'The model provider call failed. You were not charged.',
+  });
+
+  // Delivered metered call: the actual usage charge is reported.
+  const metered = seed('receipt-metered', '719', 'upto');
+  store.setServicePaymentStatus(metered.paymentKey, 'settled', {
+    txHash: `0x${'11'.repeat(32)}` as Hex,
+    chargedAmount: '26',
+  });
+  store.markServicePaymentDelivered(metered.paymentKey, JSON.stringify({ ok: true }), {
+    chargedAmount: '26',
+    consumed: true,
+  });
+
+  // Delivered exact call: no chargedAmount, so the fixed price is the charge.
+  const exact = seed('receipt-exact', '500', 'exact');
+  store.setServicePaymentStatus(exact.paymentKey, 'settled', {
+    txHash: `0x${'22'.repeat(32)}` as Hex,
+  });
+  store.markServicePaymentDelivered(exact.paymentKey, JSON.stringify({ ok: true }), {
+    consumed: true,
+  });
+
+  // In-flight: nothing settled yet, so the charge is unknown, not zero.
+  const settling = seed('receipt-settling', '719', 'upto');
+  store.setServicePaymentStatus(settling.paymentKey, 'settling', {
+    txHash: `0x${'33'.repeat(32)}` as Hex,
+    journal: `0x${'44'.repeat(32)}` as Hex,
+  });
+
+  const res = await req(app, `/api/receipts?payer=${payer}`);
+  expect(res.status).toBe(200);
+  const { receipts } = (await res.json()) as {
+    receipts: Array<{ paymentKey: string; status: string; charged: string | null }>;
+  };
+  const byKey = new Map(receipts.map((receipt) => [receipt.paymentKey, receipt]));
+  expect(byKey.get(failed.paymentKey)!.status).toBe('failed');
+  expect(byKey.get(failed.paymentKey)!.charged).toBe('0');
+  expect(byKey.get(metered.paymentKey)!.charged).toBe('26');
+  expect(byKey.get(exact.paymentKey)!.charged).toBe('500');
+  expect(byKey.get(settling.paymentKey)!.status).toBe('settling');
+  expect(byKey.get(settling.paymentKey)!.charged).toBeNull();
+
+  // The single-receipt route shares the same projection.
+  const one = await req(app, `/api/receipts/${failed.paymentKey}`);
+  expect(one.status).toBe(200);
+  expect(((await one.json()) as { receipt: { charged: string } }).receipt.charged).toBe('0');
+});
+
 test('public stats count paid calls, settled USDT, payers and agents', async () => {
   const env = await startChain();
   const { app } = buildApp(env);

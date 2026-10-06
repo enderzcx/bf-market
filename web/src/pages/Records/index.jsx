@@ -50,7 +50,9 @@ const ReceiptRow = ({ receipt }) => {
         <div>
           <dt>Charged</dt>
           <dd>
-            {formatUsdt(receipt.charged)} {symbol}
+            {receipt.charged == null
+              ? '—'
+              : `${formatUsdt(receipt.charged)} ${symbol}`}
           </dd>
         </div>
         <div>

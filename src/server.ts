@@ -592,6 +592,24 @@ export function createApp(opts: {
     createdAt: record.createdAt,
   });
 
+  // A receipt reports money that actually moved. `amount` is only the signed
+  // upper bound (metered) or the fixed price (exact), so it is never a charge
+  // unless the payment settled on chain. A failed payment settled nothing; an
+  // in-flight payment has not settled yet, so its charge is still unknown.
+  const reportedCharge = (record: ServicePaymentRecord): string | null => {
+    switch (record.status) {
+      case "settled":
+      case "delivered":
+        return record.chargedAmount ?? record.amount;
+      case "failed":
+        return "0";
+      case "required":
+      case "verified":
+      case "settling":
+        return null;
+    }
+  };
+
   // Public receipt projection. Never exposes the signature, the signed
   // journal, upstream request bodies, internal error detail, or the delivered
   // result payload. Addresses are shown in full so a payer can verify their own
@@ -633,8 +651,8 @@ export function createApp(opts: {
       createdAt: record.createdAt,
       // Signed upper bound for metered calls; the fixed price for exact ones.
       amount: record.amount,
-      // Actual charge; falls back to the authorized amount for exact payments.
-      charged: record.chargedAmount ?? record.amount,
+      // Actual charge; only set once the payment settled on chain.
+      charged: reportedCharge(record),
       usage: usage
         ? { ...usage, totalTokens: usage.promptTokens + usage.completionTokens }
         : null,
