@@ -67,7 +67,7 @@ function serviceTable(catalog: ServiceCatalog): string {
     return 'No service is listed right now. Check the live catalog at `/discovery/resources`.';
   }
   return [
-    '| Service ID | Model | Pricing | Price cap | Input limits | Output limits | Rates |',
+    '| Service ID | Model | Pricing | Max price (worst case) | Input limits | Output limits | Rates |',
     '| --- | --- | --- | --- | --- | --- | --- |',
     ...rows,
   ].join('\n');
@@ -129,12 +129,13 @@ Any wallet can pay for a service without registering. A provider registers an on
 
 A wallet signature is the identity, so there is no account and no login. The shortest path:
 
-1. Send a POST request to the service URL with a JSON body (see the service table in section 6 for the id and body shape).
-2. The server answers \`402 Payment Required\` with a \`PAYMENT-REQUIRED\` header. Decode it to read \`accepts\` (the payment options) and \`resource.url\`.
-3. Approve Permit2 once for ${asset.symbol}. The spender addresses are in the table below.
-4. Sign the payment with the official x402 v2 client (\`@x402/core\` + \`@x402/evm\`). Register \`UptoEvmScheme\` for metered services and \`ExactEvmScheme\` for fixed-price services.
+1. Send a POST request to \`${origin}/api/services/{serviceId}/call\` with a JSON body (the service table in section 6 has the id and body shape). The \`resource\` field of \`/discovery/resources\` is the authoritative URL for a service.
+2. The server answers \`402 Payment Required\` with a \`PAYMENT-REQUIRED\` header. Decode it to read \`accepts\` (the payment options), \`resource.url\` and the quoted \`amount\`. That 402 amount is authoritative: for a small request it is much lower than the worst-case cap in section 6.
+3. A metered service offers two options at the same quoted amount: \`upto\` first, then \`exact\`. Choose \`upto\` so only the actual usage settles. \`exact\` is a fallback for exact-only clients and settles the full quoted cap even when the call uses less. Fixed-price services offer \`exact\` only.
+4. Approve Permit2 once for ${asset.symbol}. The ERC-20 \`approve\` target is Permit2 itself (\`${permit2}\`); the x402 proxies in the table below are not approve targets, they only appear inside the signed Permit2 authorization. Register \`UptoEvmScheme\` for metered services and \`ExactEvmScheme\` for fixed-price services with the official x402 v2 client (\`@x402/core\` + \`@x402/evm\`).
 5. Resend the same request with the \`PAYMENT-SIGNATURE\` header.
-6. Read \`PAYMENT-RESPONSE\` for the settlement transaction and the JSON body for the result.
+6. Check the response status. A \`200\` body is \`{ "result": <output> }\`, so read \`json.result\` (the output examples show the inner object). A \`502\` with \`{"error":"The model provider call failed. You were not charged."}\` settled nothing: retry or pick another service.
+7. Read the charge. For metered services the decoded \`PAYMENT-RESPONSE\` carries \`amount\` (the actual charge in atomic ${asset.symbol}) with \`transaction\`, \`payer\` and \`network\`; \`result.charged\` and the \`charged\` field of \`/api/receipts\` report the same. Fixed-price services charge the price quoted in the 402.
 
 ### Network and contracts
 
@@ -148,6 +149,8 @@ A wallet signature is the identity, so there is no account and no login. The sho
 | Identity registry (ERC-8004) | ${registry} |
 
 ### Minimal TypeScript example
+
+Install: \`bun add viem @x402/core @x402/evm\` (or \`npm install viem @x402/core @x402/evm\`). Tested with \`@x402/core\` and \`@x402/evm\` 2.26.0 and 2.28.0.
 
 \`\`\`ts
 import { createPublicClient, createWalletClient, defineChain, getAddress, http } from 'viem';
@@ -200,6 +203,8 @@ const core = new x402Client()
   .register(\`eip155:\${CHAIN_ID}\`, new UptoEvmScheme(account));
 const client = new x402HTTPClient(core);
 const required = client.getPaymentRequiredResponse((name) => first.headers.get(name));
+// Both metered options quote the same cap. Prefer upto so only the actual
+// usage settles; exact would settle the full cap.
 const option = required.accepts.find((a) => a.scheme === 'upto') ?? required.accepts[0]!;
 
 const asset = getAddress(option.asset);
@@ -216,9 +221,16 @@ if (allowance < BigInt(option.amount)) {
 
 const payload = await client.createPaymentPayload(required);
 const paid = await post(client.encodePaymentSignatureHeader(payload));
-console.log('result', await paid.json());
+const responseBody = (await paid.json()) as { result?: unknown; error?: string };
+if (paid.status !== 200) {
+  // A 502 here means the provider call failed and you were not charged.
+  throw new Error(\`call failed with \${paid.status}: \${responseBody.error ?? 'unknown error'}\`);
+}
 const settle = decodePaymentResponseHeader(paid.headers.get('PAYMENT-RESPONSE')!);
+// Metered services report the actual charge; exact services charge the quote.
+console.log('charged (atomic ${asset.symbol})', settle.amount ?? option.amount);
 console.log('settlement transaction', settle.transaction);
+console.log('result', responseBody.result);
 \`\`\`
 
 ## 3. Starter gas for a new wallet
@@ -244,7 +256,7 @@ The MCP entry point is a Streamable HTTP server at \`${origin}/mcp\`. Tools:
 - \`platform_info\` - what the platform is, its network, and how to register or pay.
 - \`search_services\` - search the catalog by keyword or price cap.
 - \`get_service\` - one service's input and output schemas plus payment requirements.
-- \`call_service\` - call a paid service. Without a payment it returns the payment requirements; retry with the x402 payment in \`_meta["x402/payment"]\` and read the result from \`_meta["x402/payment-response"]\`.
+- \`call_service\` - call a paid service. Without a payment it returns the payment requirements; retry with the x402 payment in \`_meta["x402/payment"]\` and read the result from \`_meta["x402/payment-response"]\`. Build that payment payload exactly as in section 2 and pass it in \`_meta["x402/payment"]\` of \`call_service\`.
 - \`register_agent_info\` - the ERC-8004 registration steps.
 
 Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):
@@ -262,7 +274,7 @@ Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):
 
 ## 6. Services
 
-Price cap for a metered service: \`ceil(input_tokens x input_price) + ceil(ceil(max_tokens x 1.1) x output_price)\`, where \`input_tokens = ceil(total_input_chars / 2)\`. The 402 quotes this cap; the final charge is the actual usage and never exceeds the cap.
+Price cap for a metered service: \`ceil(input_tokens x input_price) + ceil(ceil(max_tokens x 1.1) x output_price)\`, where \`input_tokens = ceil(total_input_chars / 2)\`. The "Max price (worst case)" column is that cap at ${LLM_MAX_CONTENT_CHARS} input chars and \`max_tokens\` ${LLM_MAX_MAX_TOKENS}, the largest request allowed - a real call usually quotes far less. The 402 amount is the authoritative quote for your request. With \`upto\` the final charge is the actual usage and never exceeds the quote.
 
 ${serviceTable(catalog)}
 

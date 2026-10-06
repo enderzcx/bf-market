@@ -127,6 +127,55 @@ test('skill.md is generated from the live network config and catalog', async () 
   expect(dump).not.toContain('process.cwd');
 });
 
+test('skill.md is precise about results, schemes, approvals and charges', async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, {
+    llmServicesEnabled: true,
+    llmBeefapiApiKey: BEEFAPI_KEY,
+  });
+  await registerProvider(app, env, privateKeyToAccount(AGENT_KEY));
+
+  const md = await (await req(app, '/skill.md')).text();
+
+  // A delivered body is { result: <output> }, not the bare output object.
+  expect(md).toContain('{ "result": <output> }');
+  expect(md).toContain('read `json.result`');
+
+  // Metered services offer upto first, plus an exact fallback at the cap.
+  expect(md).toContain('Choose `upto`');
+  expect(md).toContain('`exact` is a fallback');
+  expect(md).toContain('settles the full quoted cap');
+
+  // The ERC-20 approve spender is Permit2 itself, never a proxy.
+  expect(md).toContain('The ERC-20 `approve` target is Permit2 itself');
+  expect(md).toContain(`(${'`'}${PERMIT2_ADDRESS}${'`'})`);
+  expect(md).toContain('not approve targets');
+
+  // The call URL is in the prose, and discovery.resource is authoritative.
+  expect(md).toContain(`${app.origin}/api/services/{serviceId}/call`);
+  expect(md).toContain('`resource` field of `/discovery/resources` is the authoritative URL');
+
+  // The example checks the status and names 502 as uncharged.
+  expect(md).toContain('if (paid.status !== 200)');
+  expect(md).toContain('you were not charged');
+
+  // The actual charge is shown from the settlement header and the body.
+  expect(md).toContain('settle.amount');
+  expect(md).toContain('result.charged');
+  expect(md).toContain('/api/receipts');
+
+  // The metered cap is the worst case; the 402 amount is authoritative.
+  expect(md).toContain('Max price (worst case)');
+  expect(md).toContain('The 402 amount is the authoritative quote');
+
+  // Install command and the tested client versions.
+  expect(md).toContain('bun add viem @x402/core @x402/evm');
+  expect(md).toContain('2.26.0 and 2.28.0');
+
+  // MCP passes the same payload in the documented _meta key.
+  expect(md).toContain('_meta["x402/payment"]');
+});
+
 test('the service table follows the catalog', async () => {
   const env = await startChain();
 

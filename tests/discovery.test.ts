@@ -95,6 +95,15 @@ test('discovery lists available services in the Bazaar format with matching paym
   expect(item.extensions.bazaar?.info?.input?.body).toEqual({ hello: 'world' });
   expect(item.extensions.bazaar?.schema).toBeDefined();
 
+  // A delivered result is the HTTP body { result: <output> }, so the output
+  // example carries the same envelope an agent will actually read.
+  const output = (
+    item.extensions.bazaar?.info as { output?: { example?: unknown } } | undefined
+  )?.output;
+  expect(output?.example).toEqual({
+    result: { ok: true, serviceId: 'echo', echo: { hello: 'world' } },
+  });
+
   // Provider metadata. The local ERC-8004 registry assigns agentId 0 to the
   // first registrant, and the echo service is configured for that provider.
   expect(item.provider.agentId).toBe('0');
