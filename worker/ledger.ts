@@ -11,6 +11,7 @@ import { createStore } from '../src/store.ts';
 import { createWorker } from '../src/worker.ts';
 import { configFromEnv } from './config.ts';
 import type { Env } from './env.ts';
+import { createSeedHandler } from './seed.ts';
 
 // Single Durable Object instance that owns the whole application. Every request
 // is routed here (idFromName('ledger')), so the ops signer's nonce queue, the
@@ -18,6 +19,7 @@ import type { Env } from './env.ts';
 // place. State lives in ctx.storage.sql, which survives restarts and evictions.
 export class Ledger extends DurableObject<Env> {
   private readonly app: SettlementApp;
+  private readonly seed: (req: Request) => Promise<Response>;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -46,9 +48,16 @@ export class Ledger extends DurableObject<Env> {
       // Workers Assets serves web/dist before the Worker is invoked.
       staticFileResolver: () => null,
     });
+    // One-shot identity seed, handled here and never registered in the shared
+    // app so the Bun entry exposes no seed surface.
+    this.seed = createSeedHandler({ store, config, token: env.SEED_TOKEN });
   }
 
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === '/internal/seed') {
+      return this.seed(request);
+    }
     return this.app.fetch(request);
   }
 }

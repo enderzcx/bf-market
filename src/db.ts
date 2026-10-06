@@ -202,6 +202,10 @@ export function migrateSchema(db: Db): void {
       charged TEXT NOT NULL,
       PRIMARY KEY (day, payer)
     );
+    CREATE TABLE IF NOT EXISTS seed_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      done_at INTEGER NOT NULL
+    );
   `);
   // Older local databases predate the metered columns; add them in place so a
   // running instance keeps its payment history.

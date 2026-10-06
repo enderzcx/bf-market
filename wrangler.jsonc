@@ -25,6 +25,7 @@
     "run_worker_first": [
       "/api/*",
       "/discovery/*",
+      "/internal/*",
       "/mcp",
       "/skill.md",
       "/llms.txt",

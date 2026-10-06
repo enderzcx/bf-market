@@ -29,4 +29,7 @@ export interface Env {
   SETTLEMENT_OPS_PRIVATE_KEY?: string;
   BEEFAPI_API_KEY?: string;
   BEEFAPI_BASE_URL?: string;
+  // One-shot identity seed token for POST /internal/seed. When unset the route
+  // is not registered and answers 404.
+  SEED_TOKEN?: string;
 }

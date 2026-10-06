@@ -33,6 +33,31 @@ import {
 
 export type Store = ReturnType<typeof createStore>;
 
+// One-shot import of an existing ledger into a fresh database. The field shape
+// matches what upsertAgent / createAgentDraft already accept, plus the draft's
+// registered_agent_id so an already-registered draft keeps its agent link.
+export type SeedAgentInput = {
+  chainId: number;
+  agentId: string;
+  owner: Address;
+  agentWallet: Address;
+  role: AgentRole;
+  listed: ListedStatus;
+  agentUri: string;
+  registerTx: Hex;
+  blockNumber?: string | null;
+  createdAt?: number;
+};
+
+export type SeedDraftInput = {
+  draftId: string;
+  address: Address;
+  role: AgentRole;
+  profile: AgentProfile;
+  createdAt?: number;
+  registeredAgentId?: string | null;
+};
+
 type Clock = () => number;
 
 const STATUSES = new Set<PayoutStatus>([
@@ -340,6 +365,87 @@ export function createStore(opts: {
       )
       .get(agentId) as Record<string, unknown> | null;
     return row ? mapAgentDraft(row) : null;
+  };
+
+  // Row-level writers shared by the public mutations and the one-shot seed
+  // import. They never open their own transaction so importSeed can run every
+  // row inside a single transaction.
+  const insertAgentDraft = (input: {
+    draftId: string;
+    address: Address;
+    role: AgentRole;
+    profile: AgentProfile;
+    createdAt?: number;
+  }): AgentDraftRecord => {
+    const owner = address(input.address, "代理地址");
+    if (!AGENT_ROLES.has(input.role)) {
+      throw new ServiceError(400, "代理角色无效。");
+    }
+    db.run(
+      `INSERT INTO agent_drafts (draft_id, address, role, profile_json, created_at, registered_agent_id)
+       VALUES (?, ?, ?, ?, ?, NULL)`,
+      [
+        input.draftId,
+        owner,
+        input.role,
+        JSON.stringify(input.profile),
+        input.createdAt ?? now(),
+      ],
+    );
+    return getAgentDraft(input.draftId)!;
+  };
+
+  const setDraftRegisteredRow = (draftId: string, agentId: string) => {
+    const result = db.run(
+      `UPDATE agent_drafts SET registered_agent_id = ? WHERE draft_id = ? AND registered_agent_id IS NULL`,
+      [agentId, draftId],
+    );
+    if (result.changes !== 1) {
+      const existing = getAgentDraft(draftId);
+      if (!existing || existing.registeredAgentId !== agentId) {
+        throw new ServiceError(409, "草稿状态异常。");
+      }
+    }
+  };
+
+  const upsertAgentRow = (input: {
+    chainId: number;
+    agentId: string;
+    owner: Address;
+    agentWallet: Address;
+    role: AgentRole;
+    listed: ListedStatus;
+    agentUri: string;
+    registerTx: Hex;
+    blockNumber?: string | null;
+    createdAt?: number;
+  }): AgentRecord => {
+    const owner = address(input.owner, "代理所有者");
+    const wallet = address(input.agentWallet, "代理钱包");
+    const existing = getAgent(input.chainId, input.agentId);
+    if (existing) {
+      if (existing.owner.toLowerCase() !== owner.toLowerCase()) {
+        throw new ServiceError(409, "该 agentId 已绑定其他所有者。");
+      }
+      return existing;
+    }
+    db.run(
+      `INSERT INTO agents (chain_id, agent_id, owner, agent_wallet, role, listed, agent_uri, register_tx, block_number, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.chainId,
+        input.agentId,
+        owner,
+        wallet,
+        input.role,
+        input.listed,
+        input.agentUri,
+        input.registerTx,
+        input.blockNumber ?? null,
+        input.createdAt ?? now(),
+      ],
+    );
+    return getAgent(input.chainId, input.agentId)!;
   };
 
   const getStarterGas = (address_: string): StarterGasRecord | null => {
@@ -1212,22 +1318,7 @@ export function createStore(opts: {
       profile: AgentProfile;
       createdAt?: number;
     }): AgentDraftRecord {
-      const owner = address(input.address, "代理地址");
-      if (!AGENT_ROLES.has(input.role)) {
-        throw new ServiceError(400, "代理角色无效。");
-      }
-      db.run(
-        `INSERT INTO agent_drafts (draft_id, address, role, profile_json, created_at, registered_agent_id)
-         VALUES (?, ?, ?, ?, ?, NULL)`,
-        [
-          input.draftId,
-          owner,
-          input.role,
-          JSON.stringify(input.profile),
-          input.createdAt ?? now(),
-        ],
-      );
-      return getAgentDraft(input.draftId)!;
+      return insertAgentDraft(input);
     },
     getAgentDraft,
     getAgentDraftByAgentId,
@@ -1240,16 +1331,7 @@ export function createStore(opts: {
       return Number(row.n);
     },
     setDraftRegistered(draftId: string, agentId: string) {
-      const result = db.run(
-        `UPDATE agent_drafts SET registered_agent_id = ? WHERE draft_id = ? AND registered_agent_id IS NULL`,
-        [agentId, draftId],
-      );
-      if (result.changes !== 1) {
-        const existing = getAgentDraft(draftId);
-        if (!existing || existing.registeredAgentId !== agentId) {
-          throw new ServiceError(409, "草稿状态异常。");
-        }
-      }
+      setDraftRegisteredRow(draftId, agentId);
     },
     upsertAgent(input: {
       chainId: number;
@@ -1263,34 +1345,7 @@ export function createStore(opts: {
       blockNumber?: string | null;
       createdAt?: number;
     }): AgentRecord {
-      const owner = address(input.owner, "代理所有者");
-      const wallet = address(input.agentWallet, "代理钱包");
-      return tx(() => {
-        const existing = getAgent(input.chainId, input.agentId);
-        if (existing) {
-          if (existing.owner.toLowerCase() !== owner.toLowerCase()) {
-            throw new ServiceError(409, "该 agentId 已绑定其他所有者。");
-          }
-          return existing;
-        }
-        db.run(
-          `INSERT INTO agents (chain_id, agent_id, owner, agent_wallet, role, listed, agent_uri, register_tx, block_number, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            input.chainId,
-            input.agentId,
-            owner,
-            wallet,
-            input.role,
-            input.listed,
-            input.agentUri,
-            input.registerTx,
-            input.blockNumber ?? null,
-            input.createdAt ?? now(),
-          ],
-        );
-        return getAgent(input.chainId, input.agentId)!;
-      });
+      return tx(() => upsertAgentRow(input));
     },
     getAgent,
     listAgents(filter?: { role?: AgentRole; listed?: ListedStatus }): AgentRecord[] {
@@ -1533,6 +1588,40 @@ export function createStore(opts: {
            ON CONFLICT(day, payer) DO UPDATE SET charged = excluded.charged`,
           [day, owner, next.toString()],
         );
+      });
+    },
+    seedState(): { seeded: boolean; agents: number; drafts: number } {
+      const seeded =
+        db.query(`SELECT 1 AS x FROM seed_state WHERE id = 1`).get() != null;
+      const agents = db.query(`SELECT COUNT(*) AS n FROM agents`).get() as {
+        n: number;
+      };
+      const drafts = db.query(`SELECT COUNT(*) AS n FROM agent_drafts`).get() as {
+        n: number;
+      };
+      return {
+        seeded,
+        agents: Number(agents.n),
+        drafts: Number(drafts.n),
+      };
+    },
+    // One-shot import of an existing ledger into a fresh database. Every row
+    // lands inside a single transaction together with the seed_done marker, so a
+    // failure leaves the database untouched and a success can never be replayed.
+    importSeed(input: {
+      agents: SeedAgentInput[];
+      drafts: SeedDraftInput[];
+    }): { agents: number; drafts: number } {
+      return tx(() => {
+        for (const agent of input.agents) upsertAgentRow(agent);
+        for (const draft of input.drafts) {
+          insertAgentDraft(draft);
+          if (draft.registeredAgentId) {
+            setDraftRegisteredRow(draft.draftId, draft.registeredAgentId);
+          }
+        }
+        db.run(`INSERT INTO seed_state (id, done_at) VALUES (1, ?)`, [now()]);
+        return { agents: input.agents.length, drafts: input.drafts.length };
       });
     },
   };
