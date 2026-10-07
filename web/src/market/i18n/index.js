@@ -12,7 +12,35 @@ const BACKEND_ERRORS = {
   'Invalid daily budget.': 'errorInvalidDailyBudget',
   'The daily budget cannot exceed 5 USDT.': 'errorBudgetMax',
   'This agent has no payment wallet.': 'errorNoPaymentWallet',
+  'Request a challenge first.': 'errorChallengeRequired',
+  'This challenge was already used. Request a new one.': 'errorChallengeUsed',
+  'This challenge has expired. Request a new one.': 'errorChallengeExpired',
+  'The request does not match the signed challenge.': 'errorIntentMismatch',
+  'Invalid signature.': 'errorInvalidSignature',
+  'Could not read the identity registry. Try again.': 'errorRegistryUnavailable',
+  'No identity registry is configured on this network, so ownership cannot be verified.':
+    'errorNoRegistry',
+  "The agent's payment wallet does not match. Refresh the agent and try again.":
+    'errorWalletMismatch',
 };
+// Known budget errors whose text embeds an amount. The first capture group is
+// interpolated into the dictionary entry as {amount}.
+const BACKEND_ERROR_PATTERNS = [
+  {
+    pattern: /^The daily budget exceeds the owner's limit of (.+) USDT\.$/,
+    key: 'errorOwnAboveCeiling',
+  },
+  {
+    pattern: /^The daily budget cannot exceed (.+) USDT\.$/,
+    key: 'errorBudgetMaxAmount',
+  },
+];
+
+function interpolate(template, replacements) {
+  return template.replace(/\{([^}]+)\}/g, (match, name) =>
+    Object.hasOwn(replacements, name) ? String(replacements[name]) : match,
+  );
+}
 
 function normalizedLanguage(value) {
   return value === 'en' || value === 'zh' ? value : null;
@@ -30,7 +58,12 @@ export function resolveLang(search = '', stored = null, browser = '') {
 export function translateBackendError(message, lang) {
   if (lang !== 'zh') return message;
   const key = BACKEND_ERRORS[message];
-  return key ? zh[key] : message;
+  if (key) return zh[key];
+  for (const { pattern, key: patternKey } of BACKEND_ERROR_PATTERNS) {
+    const match = pattern.exec(message);
+    if (match) return interpolate(zh[patternKey], { amount: match[1] });
+  }
+  return message;
 }
 
 function safeStoredLanguage() {

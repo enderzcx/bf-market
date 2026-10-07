@@ -37,16 +37,18 @@ export function createTestProvider(options = {}) {
   const testAccount = options.testAccount || 'owner';
   const chainId = options.chainId || LOCAL_CHAIN_ID;
   const fetchImpl = options.fetch || fetch;
-  const accountUrl = `${signerUrl}/accounts?testAccount=${encodeURIComponent(testAccount)}`;
-  const signUrl = `${signerUrl}/sign?testAccount=${encodeURIComponent(testAccount)}`;
+  let currentAccount = testAccount === 'agent' ? 'agent' : 'owner';
+  const accountUrl = () =>
+    `${signerUrl}/accounts?testAccount=${encodeURIComponent(currentAccount)}`;
+  const signUrl = () => `${signerUrl}/sign?testAccount=${encodeURIComponent(currentAccount)}`;
   const listeners = new Map();
 
   const fetchAccounts = async () => {
-    const response = await fetchImpl(accountUrl);
+    const response = await fetchImpl(accountUrl());
     if (!response.ok) {
       throw providerError(
         4900,
-        `BF Market test wallet: signer ${signerUrl} is not reachable or has no "${testAccount}" account.`,
+        `BF Market test wallet: signer ${signerUrl} is not reachable or has no "${currentAccount}" account.`,
       );
     }
     const data = await response.json();
@@ -75,7 +77,7 @@ export function createTestProvider(options = {}) {
             );
           }
         }
-        const response = await fetchImpl(signUrl, {
+        const response = await fetchImpl(signUrl(), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ message }),
@@ -103,6 +105,17 @@ export function createTestProvider(options = {}) {
     },
     emit(event, payload) {
       for (const handler of listeners.get(event) ?? []) handler(payload);
+    },
+    currentAccount() {
+      return currentAccount;
+    },
+    // Local e2e hook for VAL-WALLET-020: switch the active test account and
+    // announce it like a real wallet would after the user changes accounts.
+    async switchAccount(next) {
+      currentAccount = next === 'agent' ? 'agent' : 'owner';
+      const accounts = await fetchAccounts();
+      provider.emit('accountsChanged', accounts);
+      return accounts;
     },
   };
   return provider;

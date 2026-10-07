@@ -32,6 +32,14 @@ describe('market dictionaries', () => {
       'Invalid daily budget.',
       'The daily budget cannot exceed 5 USDT.',
       'This agent has no payment wallet.',
+      'Request a challenge first.',
+      'This challenge was already used. Request a new one.',
+      'This challenge has expired. Request a new one.',
+      'The request does not match the signed challenge.',
+      'Invalid signature.',
+      'Could not read the identity registry. Try again.',
+      'No identity registry is configured on this network, so ownership cannot be verified.',
+      "The agent's payment wallet does not match. Refresh the agent and try again.",
     ];
     for (const message of messages) {
       expect(translateBackendError(message, 'zh')).not.toBe(message);
@@ -40,5 +48,21 @@ describe('market dictionaries', () => {
     }
     expect(translateBackendError('Something odd happened.', 'zh')).toBe('Something odd happened.');
     expect(translateBackendError('Something odd happened.', 'en')).toBe('Something odd happened.');
+  });
+
+  it('interpolates the amount in dynamic budget errors', () => {
+    const zhCeiling = translateBackendError(
+      "The daily budget exceeds the owner's limit of 0.050000 USDT.",
+      'zh',
+    );
+    expect(zhCeiling).toContain('0.050000');
+    expect(zhCeiling).not.toContain('owner');
+
+    const zhMax = translateBackendError('The daily budget cannot exceed 3.000000 USDT.', 'zh');
+    expect(zhMax).toContain('3.000000');
+
+    expect(translateBackendError("The daily budget exceeds the owner's limit of 0.05 USDT.", 'en')).toBe(
+      "The daily budget exceeds the owner's limit of 0.05 USDT.",
+    );
   });
 });

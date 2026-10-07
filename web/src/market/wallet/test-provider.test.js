@@ -239,4 +239,27 @@ describe('test provider EIP-1193 surface', () => {
     expect(info.rdns).toContain(TEST_WALLET_MARKER);
     expect(info.name).toContain(TEST_WALLET_MARKER);
   });
+
+  it('switches the active test account and announces accountsChanged', async () => {
+    const AGENT = '0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A';
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(String(url));
+      const account = String(url).includes('testAccount=agent') ? AGENT : OWNER;
+      return new Response(JSON.stringify({ accounts: [account] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    const provider = createTestProvider({ testAccount: 'owner', fetch: fetchImpl });
+    const events = [];
+    provider.on('accountsChanged', (accounts) => events.push(accounts));
+
+    expect(provider.currentAccount()).toBe('owner');
+    await provider.switchAccount('agent');
+
+    expect(provider.currentAccount()).toBe('agent');
+    expect(events).toEqual([[AGENT]]);
+    expect(calls.at(-1)).toBe(`${TEST_SIGNER_URL}/accounts?testAccount=agent`);
+  });
 });
