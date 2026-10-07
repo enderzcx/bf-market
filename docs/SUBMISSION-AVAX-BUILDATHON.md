@@ -53,6 +53,7 @@ What was built and verified on 2026-10-07, during this event window, is the agen
 - Same product on a second chain, showing the settlement layer is chain-portable: https://market.bflabs.app
 - Source: https://github.com/enderzcx/bf-market (branch `codex/fuji-market`)
 - Agent instructions: https://market-fuji.bflabs.app/skill.md
+- Slides: https://github.com/enderzcx/bf-market/blob/codex/fuji-market/docs/slides/bf-market-pitch.pdf (PPTX alongside)
 - Evidence: `docs/evidence/fuji-market-x402-2026-10-07.json`, `docs/evidence/fuji-video-review-2026-10-07.md`
 - Demo film reviewed on chain (final round): https://market-fuji.bflabs.app/demo/pelican-neon-ride-v4.mp4
 - Provider agent 253: https://testnet.snowtrace.io/address/0x8004A818BFB912233c491871b3d84c89A494BD9e
