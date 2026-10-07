@@ -3,6 +3,7 @@ import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router-do
 import { LanguageProvider, useT } from './i18n/index.js';
 import HomePage from './pages/HomePage.jsx';
 import MarketPage from './pages/MarketPage.jsx';
+import DocsPage from './pages/DocsPage.jsx';
 import './styles/base.css';
 
 function Header() {
@@ -191,7 +192,7 @@ function MarketRoutes() {
         />
         <Route
           path='/docs'
-          element={<PlaceholderPage titleKey='docsTitle' introKey='docsIntro' docs />}
+          element={<DocsPage />}
         />
         <Route path='*' element={<NotFoundPage />} />
       </Routes>
