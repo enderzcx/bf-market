@@ -212,13 +212,19 @@ export function parseAddress(value: unknown): Address {
 }
 
 // A challenge is bound to its purpose so a signature gathered for one flow can
-// never be replayed in another (wallet binding, agent draft, starter gas).
-export type ChallengePurpose = 'wallet-binding' | 'agent-draft' | 'starter-gas';
+// never be replayed in another (wallet binding, agent draft, starter gas, daily
+// budget change).
+export type ChallengePurpose =
+  | 'wallet-binding'
+  | 'agent-draft'
+  | 'starter-gas'
+  | 'wallet-budget';
 
 const CHALLENGE_TITLES: Record<ChallengePurpose, string> = {
   'wallet-binding': 'Settlement wallet binding',
   'agent-draft': 'BF Market agent registration',
   'starter-gas': 'BF Market starter gas request',
+  'wallet-budget': 'BF Market daily budget change',
 };
 
 export function challengeMessage(input: {
@@ -230,16 +236,18 @@ export function challengeMessage(input: {
   issuedAt: number;
   expiresAt: number;
   purpose?: ChallengePurpose;
+  // Flow-specific lines (the budget scope, wallet and amount). They sit between
+  // the signer address and the nonce so the whole intent is inside the signature.
+  extraLines?: readonly string[];
 }): string {
   const purpose = input.purpose ?? 'wallet-binding';
   const lines = [CHALLENGE_TITLES[purpose]];
   if (purpose !== 'wallet-binding') {
     lines.push(`Purpose: ${purpose}`);
   }
+  lines.push(`Domain: ${input.domain}`, `User: ${input.userId}`, `Address: ${input.address}`);
+  if (input.extraLines?.length) lines.push(...input.extraLines);
   lines.push(
-    `Domain: ${input.domain}`,
-    `User: ${input.userId}`,
-    `Address: ${input.address}`,
     `Nonce: ${input.nonce}`,
     `Chain ID: ${input.chainId}`,
     `Issued at: ${new Date(input.issuedAt).toISOString()}`,
@@ -255,6 +263,7 @@ export function issueChallenge(input: {
   chainId: number;
   now: number;
   purpose?: ChallengePurpose;
+  extraLines?: readonly string[];
 }) {
   const nonce = `0x${crypto.randomUUID().replaceAll('-', '')}`;
   const issuedAt = input.now;

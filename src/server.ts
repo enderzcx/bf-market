@@ -59,6 +59,7 @@ import {
 } from "./starter-gas.ts";
 import { createOpsSigner, type OpsSigner } from "./ops-signer.ts";
 import { createReadApis } from "./read-apis.ts";
+import { createBudgetService } from "./budget.ts";
 import { createServiceCatalog, type ServiceCatalog } from "./services.ts";
 import { meteredUpperBound } from "./llm.ts";
 import { createServiceDiscovery, parseDiscoveryFilter } from "./discovery.ts";
@@ -653,7 +654,9 @@ export function createApp(opts: {
   const parseReceiptLimit = (value: string | null): number => parseLimit(value, 50);
 
   // The wallet summary defaults to the 10 most recent receipts.
-  const parseSummaryLimit = (value: string | null): number => parseLimit(value, 10);
+  const SUMMARY_RECEIPT_LIMIT = 10;
+  const parseSummaryLimit = (value: string | null): number =>
+    parseLimit(value, SUMMARY_RECEIPT_LIMIT);
 
   const readApis = createReadApis({
     store: opts.store,
@@ -663,6 +666,14 @@ export function createApp(opts: {
     now,
     publicAgent,
     publicReceipt,
+  });
+
+  const budgetService = createBudgetService({
+    store: opts.store,
+    config: opts.config,
+    registry: registryChain,
+    now,
+    summary: (wallet) => readApis.walletSummary(wallet, SUMMARY_RECEIPT_LIMIT),
   });
 
   const AGENT_CHALLENGE_PURPOSES = new Set(["agent-draft", "starter-gas"] as const);
@@ -1248,6 +1259,20 @@ export function createApp(opts: {
       }
       if (req.method !== "POST")
         return json(405, { error: "Method not allowed." });
+
+      // Public budget routes (architecture §3.5): the wallet signature over a
+      // server-issued challenge is the identity, so no session and no Origin
+      // header are required. The domain in the signed message comes from the
+      // same origin the agent registration flow uses.
+      if (url.pathname === "/api/budgets/challenge") {
+        const body = await readJson(req);
+        return json(200, budgetService.issueChallenge(body, agentOriginOf(requireHost(req))));
+      }
+      if (url.pathname === "/api/budgets") {
+        const body = await readJson(req);
+        requireHost(req);
+        return json(200, await budgetService.submit(body, "http"));
+      }
 
       // Public agent routes: a wallet signature is the identity, so no session
       // and no Origin header are required. They are handled before the

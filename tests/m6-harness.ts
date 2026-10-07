@@ -252,6 +252,7 @@ export function buildApp(
     llmBeefapiApiKey?: string;
     llmPayerDailyCapAtomic?: bigint;
     llmGlobalDailyCapAtomic?: bigint;
+    settlementBudgetMaxAtomic?: bigint;
     llmRequestTimeoutMs?: number;
     agentOrigin?: string;
     // A stub registry keeps the read-API tests independent of ganache RPC and
@@ -296,6 +297,7 @@ export function buildApp(
     llmBeefapiApiKey: overrides.llmBeefapiApiKey ?? '',
     llmPayerDailyCapAtomic: overrides.llmPayerDailyCapAtomic,
     llmGlobalDailyCapAtomic: overrides.llmGlobalDailyCapAtomic,
+    settlementBudgetMaxAtomic: overrides.settlementBudgetMaxAtomic,
     llmRequestTimeoutMs: overrides.llmRequestTimeoutMs,
     agentOrigin: overrides.agentOrigin,
   });

@@ -366,6 +366,19 @@ export function createStore(opts: {
 
   const tx = <T>(fn: () => T): T => db.transaction(fn);
 
+  // Compare-and-swap consume of a challenge. Used on its own by the flows that
+  // do their work after the challenge is spent, and inside the budget writes,
+  // where spending the challenge and writing the limit share one transaction so
+  // a failed write leaves the challenge unconsumed (architecture §3.2).
+  const consumeChallengeRow = (sessionId: string): void => {
+    const result = db.run(
+      `UPDATE challenges SET consumed = 1 WHERE session_id = ? AND consumed = 0`,
+      [sessionId],
+    );
+    if (result.changes !== 1)
+      throw new ServiceError(409, "This challenge was already used. Request a new one.");
+  };
+
   const purgeExpiredAuthSessions = () => {
     db.run(`DELETE FROM auth_sessions WHERE expires_at <= ?`, [now()]);
   };
@@ -1230,16 +1243,20 @@ export function createStore(opts: {
       message: string;
       issuedAt: number;
       expiresAt: number;
+      // The signed intent of a wallet-budget challenge, so a submit body can be
+      // checked against exactly what was signed. NULL for the other flows.
+      intentJson?: string | null;
     }) {
       db.run(
-        `INSERT INTO challenges (session_id, address, nonce, message, issued_at, expires_at, consumed)
-         VALUES (?, ?, ?, ?, ?, ?, 0)
+        `INSERT INTO challenges (session_id, address, nonce, message, issued_at, expires_at, consumed, intent_json)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            address = excluded.address,
            nonce = excluded.nonce,
            message = excluded.message,
            issued_at = excluded.issued_at,
            expires_at = excluded.expires_at,
+           intent_json = excluded.intent_json,
            consumed = 0`,
         [
           row.sessionId,
@@ -1248,6 +1265,7 @@ export function createStore(opts: {
           row.message,
           row.issuedAt,
           row.expiresAt,
+          row.intentJson ?? null,
         ],
       );
     },
@@ -1264,16 +1282,10 @@ export function createStore(opts: {
         issuedAt: Number(row.issued_at),
         expiresAt: Number(row.expires_at),
         consumed: Number(row.consumed) === 1,
+        intentJson: row.intent_json == null ? null : String(row.intent_json),
       };
     },
-    consumeChallenge(sessionId: string) {
-      const result = db.run(
-        `UPDATE challenges SET consumed = 1 WHERE session_id = ? AND consumed = 0`,
-        [sessionId],
-      );
-      if (result.changes !== 1)
-        throw new ServiceError(409, "This challenge was already used. Request a new one.");
-    },
+    consumeChallenge: consumeChallengeRow,
     getOrderSnapshot(requestId: string) {
       const row = db
         .query(
@@ -2082,6 +2094,8 @@ export function createStore(opts: {
     },
     // Owner ceiling for one agent. Writing it never rewrites the wallet's own
     // value: the effective limit is the smaller of the two at execution time.
+    // `challengeKey` spends the signed challenge in the same transaction as the
+    // write, so a replayed signature cannot write twice.
     setCeiling(input: {
       chainId: number;
       agentId: string;
@@ -2090,12 +2104,14 @@ export function createStore(opts: {
       signer: Address;
       via: BudgetEventVia;
       at?: number;
+      challengeKey?: string;
     }): CeilingRecord {
       const wallet = address(input.wallet, "付款钱包地址");
       const signer = address(input.signer, "签名人地址");
       const dailyLimit = requireLimit(input.dailyLimit);
       const at = input.at ?? now();
       return tx(() => {
+        if (input.challengeKey) consumeChallengeRow(input.challengeKey);
         db.run(
           `INSERT INTO agent_budget_ceilings (chain_id, agent_id, wallet, daily_limit, set_by, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)
@@ -2124,10 +2140,12 @@ export function createStore(opts: {
       signer: Address;
       via: BudgetEventVia;
       at?: number;
+      challengeKey?: string;
     }): CeilingRecord | null {
       const signer = address(input.signer, "签名人地址");
       const at = input.at ?? now();
       return tx(() => {
+        if (input.challengeKey) consumeChallengeRow(input.challengeKey);
         const existing = getCeilingRow(input.chainId, input.agentId);
         if (!existing) return null;
         db.run(`DELETE FROM agent_budget_ceilings WHERE chain_id = ? AND agent_id = ?`, [
@@ -2152,12 +2170,14 @@ export function createStore(opts: {
       signer: Address;
       via: BudgetEventVia;
       at?: number;
+      challengeKey?: string;
     }): WalletBudgetRecord {
       const wallet = address(input.wallet, "钱包地址");
       const signer = address(input.signer, "签名人地址");
       const dailyLimit = requireLimit(input.dailyLimit);
       const at = input.at ?? now();
       return tx(() => {
+        if (input.challengeKey) consumeChallengeRow(input.challengeKey);
         db.run(
           `INSERT INTO wallet_budgets (wallet, daily_limit, updated_at) VALUES (?, ?, ?)
            ON CONFLICT(wallet) DO UPDATE SET
@@ -2182,11 +2202,13 @@ export function createStore(opts: {
       signer: Address;
       via: BudgetEventVia;
       at?: number;
+      challengeKey?: string;
     }): WalletBudgetRecord | null {
       const wallet = address(input.wallet, "钱包地址");
       const signer = address(input.signer, "签名人地址");
       const at = input.at ?? now();
       return tx(() => {
+        if (input.challengeKey) consumeChallengeRow(input.challengeKey);
         const existing = getWalletBudgetRow(wallet);
         if (!existing) return null;
         db.run(`DELETE FROM wallet_budgets WHERE wallet = ?`, [wallet]);
