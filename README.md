@@ -1,159 +1,136 @@
-# 伙伴中心 · Partner Center
+# BF Market
 
-面向 new-api、sub2api 部署者的自部署伙伴中心，连接已有网关、业务账本与链上佣金结算。BeefAPI 是首个已验证的测试接入方；两个上游生态的标准适配尚待开发与版本验收。
+BF Market 是一个让 AI agent 按次付费调用服务的市场，跑在 **BOT Chain 测试网**（链 968）上，线上地址 https://market.bflabs.app 。
 
-**当前已验收：Avalanche Fuji 公网测试订单收款与自动返佣闭环。** 完整海外站 React 前端已迁入伙伴中心，公网展示为持续迭代版本。迁移范围见 [前端验收合同](docs/OVERSEAS-ACCEPTANCE.md)。公网发布状态与链上证据以 [验证记录](docs/VERIFICATION.md) 为准。
+一次调用是这样完成的：agent 拿到 `skill.md`，找到服务，请求后收到 x402 的 402 报价，签一份 Permit2 授权（`exact` 固定价，`upto` 按报价上限授权），平台按实际用量结算并出一张收据。付款用测试网 USDT，结算 gas 由平台的 ops 钱包代付；私钥不进仓库，也不进浏览器。
 
-## 前端构建
+网站和 API 由同一个 Cloudflare Worker（`bf-market`）提供。无状态 Worker 把所有动态请求转发给唯一的 Durable Object（`ledger`），预算账本、付款幂等锁、ops 签名 nonce 和启动 gas 额度都集中在这一个对象里，因此保持串行。DO 的存储是 `ctx.storage.sql`，与 Bun 版共用同一套表结构和 SQL。
 
-前端源码位于 `web/`。先执行 `cd web && bun install --frozen-lockfile && bun run build`，再运行根目录服务。服务默认提供 `web/dist`，支持明确的伙伴中心页面路径及构建资源；`SETTLEMENT_PUBLIC_DIR` 可以覆盖该目录。不要把旧 `public/index.html` 作为新版入口。现有 `public/app.js` 保留为已验证 x402 客户端的源码依赖，随 React 构建打包。
+## 网站
 
-### BF Market 公共网站
+| 路径 | 内容 |
+| --- | --- |
+| `/` | 首页 Home：一句话定位、可复制给 agent 的提示词、实时统计、四步流程 |
+| `/market` | 市场 Market：按服务方（ERC-8004 agent）分组，列出服务、计价方式和单次报价上限，可展开看调用示例 |
+| `/wallet` | 控制台 Console：连接钱包管理预算，或输入地址查看任意钱包 |
+| `/wallet/0x…` | 某个付款钱包的公开摘要：今日已花、生效预算、平台限额、各服务单次报价、最近收据 |
+| `/docs` | 双语文档：`skill.md`、MCP、API、预算与限额、合约地址 |
+| `/records` | 跳转到控制台（`/records?payer=0x…` → `/wallet/0x…`） |
+| `/partner/*` | 伙伴中心（原有功能，仅换了挂载前缀） |
+| `/demo` | 静态演示页 |
 
-`web/` 同时包含 BF Market 公共网站和原伙伴中心。公共网站首页、市场、钱包控制台和双语文档分别位于 `/`、`/market`、`/wallet` 和 `/docs`；伙伴中心入口位于 `/partner`。从仓库根目录运行 `bun run build:web`，构建产物由 Worker Assets 提供。网站默认根据浏览器语言显示中文或英文，也可用 `?lang=zh` 或 `?lang=en` 指定语言，之后会记住选择。
+全站中英双语，导航右上角切换，支持 `?lang=zh` 和 `?lang=en`，之后会记住选择。视觉是「终端琥珀」主题：暗底、等宽字体、1px 分隔线、不用阴影。旧的伙伴中心路径（`/login`、`/console`、`/progress` 等）会自动跳转到 `/partner/...`。
 
-下面的本地链、来源和资金示例是原型开发说明，不代表已连接生产账本。
+## 每日预算 budgets
 
-## 本地运行
+一个付款钱包可以带一份每日预算，对**所有付费服务**生效，包括 `echo`。生效值是两者中较小的一个：
 
-安装 Bun，然后在本目录运行：
+- **owner 上限**：ERC-8004 的 owner 给某个 agent 设的上限，作用在该 agent 的付款钱包上；
+- **自设值**：付款钱包给自己设的值。
 
-```sh
-bun install --frozen-lockfile
-bun run chain:local
-```
+两者都没设时没有用户预算（`userBudget` 为 `null`）：`echo` 不限，大模型只受平台限额约束。设成 `0` 等于暂停该钱包的全部付费调用。每个值最高 5 USDT。
 
-另开终端运行：
+规则：
 
-```sh
-bun run dev
-```
+- 付款钱包只能设 ≤ owner 上限的值，超了返回 `The daily budget exceeds the owner's limit of <amount> USDT.`。
+- owner 调低上限不会改写钱包存下来的自设值，生效值暂时降到上限；上限调高或删除后，自设值自动生效。
+- 能否调用按**单次报价上限**判断：报价高于当日剩余额度的模型当天不可调用，便宜的那个仍然可以。结算后只按实际用量计费。
+- 预算改动立即生效；已经在途的调用保留已预占的额度。
 
-打开 http://127.0.0.1:4311 。选择本地测试钱包，开启自动结算，在商家页创建测试佣金。正常执行由定时器推进，也可立即检查。模拟佣金不是营收；本地链代币不是 Circle USDC。测试工作区中的商家/推广者切换仅用于演示，不是账号登录和权限隔离。
+大模型的平台限额只统计大模型（metered/`upto`）花费：每个钱包每天 5 USDT、全平台每天 50 USDT；`echo` 没有平台限额。
 
-状态：待结算 → 已签名 → 已广播 → 链上已确认 → 原账本已完成。服务在发送交易前保存签名交易。结果不明时只重播同一笔交易；账本回写失败时只补回写。异常任务继续保持冻结，不自动解冻或换单重付。
+改预算用两步钱包签名：`POST /api/budgets/challenge` 拿一条 EIP-191 `personal_sign` 挑战（5 分钟有效、一次性），签名后连同同样的请求体 `POST /api/budgets`。`scope` 为 `ceiling`（带 `agentId`）或 `wallet`；`dailyLimit: null` 表示删除。也可以走 MCP 的 `set_wallet_budget`（先不带 `signature` 拿挑战，再带上 `signature` 提交）。读当前状态用 `GET /api/wallets/{address}/summary`。
 
-本地链和服务数据都保存在被 Git 忽略的 `.local/`。独占执行钱包不能被其他脚本同时使用。重置本地链时必须同步重置对应的演示账本，不能将旧账本与新链混用。
+命令行：`bun scripts/budget-demo.ts --help` 支持 `show | set-ceiling | remove-ceiling | set-own | remove-own`，签名用 `--owner-key` / `--wallet-key` 指向环境变量名（默认 `OWNER_PRIVATE_KEY` / `AGENT_PRIVATE_KEY`），从不打印私钥。
 
-## Cloudflare Workers 入口
+## 本地运行（端口 4333）
 
-`worker/index.ts` 是第二个入口（Bun 版 `src/server.ts` 保持不变）。无状态 Worker 把所有动态请求转发给唯一的 Durable Object（`idFromName('ledger')`），静态前端 `web/dist` 由 Workers Assets 托管并做 SPA 回退。账本、付款幂等锁、ops 签名 nonce 与启动 gas 额度都集中在这一个对象里，因此保持串行。DO 的存储是 `ctx.storage.sql`，与 Bun 版共用同一套表结构和 SQL（见 `src/db.ts` 的 `Db` 抽象）。
-
-```sh
-bun run dev:worker    # wrangler dev --local
-bun run build:worker  # wrangler deploy --dry-run --outdir dist-worker
-```
-
-本地 `wrangler dev` 的请求主机名需要是公开来源，否则动态接口按设计拒绝：
-
-```sh
-curl -H 'Host: market.bflabs.app' http://localhost:8787/healthz
-```
-
-非明文配置写在 `wrangler.jsonc` 的 `vars`；下列密钥只在部署时用 `wrangler secret put` 写入，不写进仓库：
-
-- `SETTLEMENT_OPS_PRIVATE_KEY`
-- `BEEFAPI_API_KEY`
-- `BEEFAPI_BASE_URL`
-
-`compatibility_date` 目前固定为 `2026-10-03`，这是 `wrangler@4.143.0` 自带 workerd 支持的最新日期；升级 wrangler 后应改回部署当日。自定义域（`routes`）留到部署时再配置。
-
-## BeefAPI 接入
-
-BeefAPI 适配代码位于独立工作树 `codex/fuji-settlement`。它增加默认关闭、独立鉴权的测试接口。BeefAPI 原账本负责实际可用余额、冻结和已提现记录，结算服务不重复计算或复制可用佣金余额。
-
-- `POST /api/settlement-test/reservations` 冻结 global 佣金并返回唯一单。
-- `GET /api/settlement-test/reservations` 分页取单。
-- `POST /api/settlement-test/reservations/:id/complete` 链上核验后完成原账本。
-- `GET /api/settlement-test/partners/:id` 读取原账本余额。
-
-测试订单演示默认关闭。仅当来源为 beefapi 且双方都显式打开时可用：来源 `SETTLEMENT_TEST_ORDER_MODE=true`，本应用 `SETTLEMENT_ORDER_DEMO=true`。此时可创建默认 10 USD 测试订单，页面用「模拟支付成功」确认，不会向买家扣款。佣金金额以来源为准，收款地址在首次确认时固定。出款仍由定时器执行，不在确认接口里上链。
-
-- `GET /api/settlement-test/orders`
-- `POST /api/settlement-test/orders`
-- `POST /api/settlement-test/orders/:request_id/pay`
-
-独立服务只接受回环地址上的 BeefAPI 测试环境。普通生产提现和钱包入口保持既有行为。适配鉴权 token 由环境配置，不出现在网页中，不写入仓库。
-
-## Fuji 联调所需
-
-已完成一次明确授权的 Fuji 部署及 1 测试 USDC 出款，凭证见 `docs/evidence/fuji-acceptance-2026-09-18.json`。新增付款需按当前金额和收款地址授权；订单驱动演示入口见 [ORDER-DEMO.md](docs/ORDER-DEMO.md)。以下是 Fuji 执行条件：
-
-1. 商家管理员、专用执行钱包和推广者收款钱包的公开地址。
-2. 执行钱包的测试 AVAX、出款合约的测试 USDC。
-3. 私钥只放受控进程环境，不能粘贴聊天、提交 Git 或放进前端。
-4. 部署并确认出款合约地址，核对管理员与执行者角色。
-
-官方测试 USDC 固定为 `0x5425890298aed601595a70AB815c96711a31Bc65`，链 ID `43113`。引用：[Circle 合约地址](https://developers.circle.com/stablecoins/usdc-contract-addresses)。
-
-无需私钥的只读检查：
+先构建前端到 `web/dist`（Worker Assets 提供这些文件，不起 Vite 开发服务器）：
 
 ```sh
-bun scripts/fuji-preflight.ts
+bun run build:web
 ```
 
-该脚本只检查网络、USDC 精度和区块；可设置 `FUJI_EXECUTOR_ADDRESS` 读取测试钱包余额。成功不代表任何合约部署、出款或最终账本验收。
+方式一，本机跑 Worker（最接近线上；API + 已构建的网站都在 4333）：
 
-## 公网演示与运行边界
+```sh
+./node_modules/.bin/wrangler dev --local --ip 127.0.0.1 --port 4333 --inspector-port 4334 \
+  --persist-to /tmp/bfm-local-state \
+  --env-file .secrets/beefapi.env \
+  --var SETTLEMENT_PUBLIC_ORIGIN: --var SETTLEMENT_PORT:4333
+```
 
-演示入口：https://partner.bflabs.app/ 。当前具备商家/推广者登录、角色权限隔离和 HTTPS 会话；应用进程仍监听回环，由反向代理提供公网入口。部署方式见 [PUBLIC-DEMO.md](docs/PUBLIC-DEMO.md)，账号与会话配置见 [AUTH-DEMO.md](docs/AUTH-DEMO.md)。仓库不提供公网账号密码或钱包私钥。
+方式二，跑 Bun 进程（本机 SQLite，同一套接口）：
 
-x402 测试收款已完成独立验收，见 [X402.md](docs/X402.md)。它先核验 10 测试 USDC 收款，再由业务账本计算并冻结 1 测试 USDC 佣金，随后执行另一笔出款交易；这不是收款时原子分账，也不充值生产 API 余额。手动转币到合约只是补充资金，尚无通用手动充值归因入口。
+```sh
+SETTLEMENT_PORT=4333 bun run dev
+```
 
-当前仍为受控单商家测试环境。多商家资金隔离、生产订单、退款策略、生产密钥托管和主网验收尚未完成。BeefAPI 来源适配器在另一个工作树中，本仓库不是包含该网关全部源码的一键部署包。
+打开 http://127.0.0.1:4333 。本地 Worker 会通过 RPC 读真实的测试网注册表（`ownerOf` / `getAgentWallet`），但本地用的是一次性 ops key，没有 gas，所以本地只能报价、验签、预占和拒绝，不会真正结算；「预算内付费成功并按实际用量扣费」在线上验证。
+
+密钥只放在被 Git 忽略的 `.secrets/`（权限 600），用 `--env-file .secrets/...` 或 `set -a; . .secrets/botchain-testnet/xxx.env; set +a` 在单条命令里加载，不要写进仓库、日志或前端。
+
+付费与 MCP 示例脚本：`bun scripts/agent-pay-demo.ts`（echo，exact）、`bun scripts/llm-pay-demo.ts`（大模型，upto）、`bun scripts/mcp-demo.ts`（MCP 入口）。它们默认只连本地链，测试网要显式加 `--network botchain-testnet --send`。
+
+## 测试
+
+```sh
+bun run verify        # tsc --noEmit + bun test（根目录套件已包含 web 单测）
+bun test              # 只跑测试
+cd web && bun test    # 只跑前端单测
+bun run typecheck     # 只做类型检查
+```
+
+构建预演：
+
+```sh
+bun run build:web     # 生产构建；设置了 VITE_BFM_TEST_WALLET 时直接失败
+bun run build:worker  # wrangler deploy --dry-run，不写线上
+```
+
+本地要验证浏览器钱包签名路径时，用 e2e 构建加本机签名服务（只监听 127.0.0.1:4335，私钥来自环境变量）：
+
+```sh
+bun run build:web:e2e
+bun run dev:wallet-signer --port 4335
+```
+
+生产构建不会包含测试钱包：构建期剔除、构建脚本拒绝、产物扫描（`web/dist` 里不能出现 `bfm-test-wallet`）、运行期拒绝非回环主机，共四道保护。
+
+## 部署
+
+每一条远程 wrangler 命令都必须带 `CLOUDFLARE_ACCOUNT_ID`（本机登着两个账号，`bf-market` 属于 `b3f5c8a115367959cacd82878f8c84ab`）：
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab bun run build:worker            # 预演
+CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab ./node_modules/.bin/wrangler deploy
+CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab ./node_modules/.bin/wrangler deployments list
+CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab ./node_modules/.bin/wrangler rollback <version-id>
+```
+
+自定义域 `market.bflabs.app` 在 `wrangler.jsonc` 的 `routes` 里；非明文配置放在同一文件的 `vars`。密钥只用 `wrangler secret put` 写入，仓库里不保存，名字是 `SETTLEMENT_OPS_PRIVATE_KEY`、`BEEFAPI_API_KEY`、`BEEFAPI_BASE_URL`。
+
+部署后头几秒，唯一的 `ledger` Durable Object 可能还在跑旧代码（新路由会短暂返回 405），重新探测一次再判断是不是部署失败。
+
+线上预算矩阵的验证记录在 `docs/evidence/worker-budget-botchain-testnet-2026-10-07.json`（部署版本、agent 编号、公开地址、每一步请求与结果、交易哈希）。
+
+## 给 agent 的入口
+
+- `GET /skill.md`：接入说明、服务与价格、每日预算、错误列表（英文）。
+- `GET /llms.txt`：机器可读的入口索引。
+- `POST /mcp`：MCP（Streamable HTTP），工具包括 `platform_info`、`search_services`、`get_service`、`call_service`、`register_agent_info`、`get_wallet_summary`、`set_wallet_budget`。
+- `GET /api/services/:id/call`、`GET /api/receipts`、`GET /api/wallets/:address/summary`、`GET /api/owners/:address/agents`、`GET /api/providers`：HTTP 接口。
+
+接口错误统一用英文，文案以 `skill.md` 和线上响应为准。
+
+## 伙伴中心（`/partner`）
+
+原有的伙伴中心整体挂在 `/partner` 下：`/partner`、`/partner/login`、`/partner/console`、`/partner/progress`、`/partner/docs`。文案和样式保持原样，固定中文，不显示语言切换；旧路径（`/login`、`/console/*`、`/progress`、`/progress-lab`）自动跳转过去。
+
+伙伴中心背后的结算原型（自有链、商户/推广者演示、版本化来源适配器）仍在本仓库里，设计说明与历史验证记录见 [docs/VERIFICATION.md](docs/VERIFICATION.md)、[docs/CONTRACT.md](docs/CONTRACT.md) 和 [docs/PUBLIC-DEMO.md](docs/PUBLIC-DEMO.md)。它与 BF Market 线上 Worker 用的是各自独立的账本与配置。
 
 ## 源码与许可
 
-个人仓库：`enderzcx/partner-center`。已于 2026-09-19 经项目所有者授权公开，用于 Team1 Builder Day @Shenzhen 项目提交。
+个人仓库：`enderzcx/partner-center`。已由项目所有者授权公开，用于 Team1 Builder Day @Shenzhen 项目提交。
 
-迁入前端保留 new-api / QuantumNous 的版权与许可声明，适用上游条款见 [UPSTREAM-LICENSE](UPSTREAM-LICENSE)。合约等文件另有文件级 SPDX 标记，字体许可证随资源保存；不能把整个项目统一重新声明为原创 MIT 项目。
-
-## 复现接入验收
-
-先启动本地链。编译真实 BeefAPI 控制器的测试 fixture（只需首次或适配源码变化后）：
-
-```sh
-cd /Volumes/ExternalWork/Worktrees/beefapi/fuji-settlement
-go test -c ./controller -o /Volumes/ExternalWork/Worktrees/settlement/fuji-demo/.local/beefapi-fixture.test
-```
-
-在本项目新终端启动 fixture：
-
-```sh
-bun scripts/beefapi-fixture.ts
-```
-
-它创建全新的临时 SQLite、100 单位测试收益和专用临时 token，运行上限 30 分钟。生成的 `.local/beefapi.env` 只供服务进程读取，并为本轮生成独立结算数据库路径。
-
-停止占用 4311 的 fixture 模式应用后，在本项目另一终端运行：
-
-```sh
-source .local/beefapi.env
-SETTLEMENT_TICK_MS=1000 bun run dev
-```
-
-执行端到端验收：
-
-```sh
-bun scripts/verify-live.ts
-```
-
-脚本自动提交一张 10 单位的测试结算单，等待定时器出款，核对本地 EVM 余额实际增量与源账本状态，然后重复触发检查确认不多付。只允许本机 31337 网络。fixture 模式也可运行同一脚本，它会绑定本地钱包并添加测试佣金。
-
-仅监听一个服务实例；不得让其他进程共用执行私钥。不同来源使用不同账本文件，默认独占锁仍共用。服务重启后继续使用原账本、链数据库和配置；不同来源/链/代币/合约/执行地址不能复用同一账本。
-
-常规验证：
-
-```sh
-bun run verify
-```
-
-默认演示参数为 1 USDC 最低金额、60 秒成熟期、30 秒扫描；`SETTLEMENT_MATURITY_MS=0 SETTLEMENT_TICK_MS=1000` 仅用于加速本地测试。BeefAPI 已冻结的单据按来源确认结果处理，不再次套用演示成熟期。
-
-## 产品与演示
-
-产品方向是优先服务 new-api、sub2api 部署者，提供独立伙伴中心与版本化适配器。商家保留现有网关、计费和账号系统，逐步在统一入口管理多个产品。当前仅为 BeefAPI 单商家受控测试，不代表上游全版本兼容或官方合作。
-
-- [在线演示](https://partner.bflabs.app/demo)：前7页约3分钟，后4页问答。展示既有 Fuji 测试案例。
-- [逐页讲稿](docs/DEMO-DAY-SCRIPT.md)与[产品进展](https://partner.bflabs.app/progress)。
-- CommissionEscrow 仅本地验证，待 Fuji 接线与领取验证。定制结算 L1、预制配置包、商家专属部署、ICM／ICTT 及 MCP 接口均为后续方向，详见 [产品方向与路线](docs/PRODUCT-ROADMAP.md)。
+迁入的前端保留 new-api / QuantumNous 的版权与许可声明，适用上游条款见 [UPSTREAM-LICENSE](UPSTREAM-LICENSE)。合约等文件另有文件级 SPDX 标记，字体许可证随资源保存；不能把整个项目统一重新声明为原创 MIT 项目。

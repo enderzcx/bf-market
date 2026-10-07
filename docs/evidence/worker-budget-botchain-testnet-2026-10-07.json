@@ -1,0 +1,323 @@
+{
+  "milestone": "go-live",
+  "feature": "go-live-budget-matrix",
+  "date": "2026-10-07",
+  "site": "https://market.bflabs.app",
+  "network": {
+    "name": "BOT Chain Testnet",
+    "chainId": 968,
+    "eip155": "eip155:968",
+    "rpc": "https://rpc.bohr.life",
+    "explorer": "https://scan.bohr.life",
+    "usdt": "0x75edC9335175Fc0552D51D48439F229c10420fe3",
+    "identityRegistry": "0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "x402Permit2UptoProxy": "0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002"
+  },
+  "deploy": {
+    "command": "CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab ./node_modules/.bin/wrangler deploy",
+    "cloudflareAccountId": "b3f5c8a115367959cacd82878f8c84ab",
+    "deployedVersion": "f061bfc2-464c-4a34-8da6-dcaabfeffbb4",
+    "deployedVersionCreated": "2026-10-07T12:13:50.860Z",
+    "rollbackVersion": "673d3561-6acf-4ca0-9f9e-0137fcfab5b5",
+    "branchCommit": "399e4b5",
+    "deployedBy": "feature go-live-deploy (record in library/environment.md)"
+  },
+  "agents": {
+    "ownerNotWallet": {
+      "agentId": "2",
+      "role": "buyer",
+      "owner": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "agentWallet": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+      "registeredIn": "budget-auth (on-chain; registration tx 0xecb9f2dfb44d26a55e95960846d14c9e98a6686d494771237398b957f011d39e, setAgentWallet tx 0xe80b52d2c152b6130032b91b7ac4dfbda1c7f769d885170ad9cecdef3571aab0)"
+    },
+    "sameAddress": {
+      "agentId": "0",
+      "role": "buyer",
+      "owner": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "agentWallet": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada"
+    },
+    "provider": {
+      "agentId": "1",
+      "role": "provider",
+      "agentWallet": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+      "services": ["echo", "llm-glm-5-3", "llm-claude-opus-5-5", "llm-gpt-6-astra"]
+    }
+  },
+  "wallets": {
+    "publicOnly": true,
+    "keys": "the two signing credentials live in .secrets/botchain-testnet/buyer-demo.env and .secrets/botchain-testnet/budget-agent.env (mode 600, git-ignored) and were loaded per command only; no credential value appears in this file or in any captured command output.",
+    "buyerDemo": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+    "W": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+    "provider": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A"
+  },
+  "preChecks": {
+    "healthz": { "request": "GET /healthz", "status": 200, "body": { "ok": true, "payouts": "disabled", "network": "botchain-testnet" } },
+    "summaryWBefore": { "userBudget": null, "spent": { "all": { "charged": "0", "pending": "0" }, "llm": { "charged": "0", "pending": "0" } } },
+    "summaryOwnerBefore": { "userBudget": null, "spent": { "all": { "charged": "0", "pending": "0" }, "llm": { "charged": "0", "pending": "0" } } },
+    "balancesBefore": {
+      "buyerDemo": { "usdtAtomic": "5755670", "tBotWei": "28521540000000000", "permit2Allowance": "max" },
+      "W": { "usdtAtomic": "1200000", "tBotWei": "9055020000000000", "permit2Allowance": "max" },
+      "provider": { "usdtAtomic": "3044330" }
+    },
+    "noteNoAgentsRowForTestAgent": {
+      "observation": "POST https://market.bflabs.app/api/agents/2/refresh returns 404 {\"error\":\"Agent not found.\"}; /api/agents lists only #0 and #1, so the production Durable Object has no agents row for the test agent (it was registered through the platform flow against the local Worker during budget-auth).",
+      "impact": "None on these assertions: the ceiling write authorizes by reading ownerOf(2)/getAgentWallet(2) on chain, and the enforcement path reads only wallet_budgets / agent_budget_ceilings. The owner console would not list agent 2 (candidate set needs an agents row); the same-address agent #0 carries that console path live.",
+      "rawResponse": "{\"error\":\"Agent not found.\"}"
+    }
+  },
+  "steps": [
+    {
+      "id": "VAL-LIVE-003.1",
+      "assertion": "VAL-LIVE-003",
+      "action": "owner (buyer-demo) sets a 0.05 USDT ceiling on agent #2, signed",
+      "request": "bun scripts/budget-demo.ts set-ceiling --agent 2 --wallet 0xeD0c…427c --amount 0.05 --base-url https://market.bflabs.app (signed by buyer-demo via POST /api/budgets/challenge → personal_sign → POST /api/budgets)",
+      "httpStatus": 200,
+      "outcome": "effective 0.05 USDT (source ceiling)",
+      "summaryAfter": { "userBudget": { "effective": "50000", "source": "ceiling", "ceiling": { "dailyLimit": "50000", "agentId": "2", "setBy": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada" } } }
+    },
+    {
+      "id": "VAL-LIVE-003.2",
+      "assertion": "VAL-LIVE-003",
+      "action": "W tries to set its own budget to 0.10, above the ceiling",
+      "request": "bun scripts/budget-demo.ts set-own --wallet 0xeD0c…427c --amount 0.10 --base-url https://market.bflabs.app",
+      "httpStatus": 400,
+      "outcome": "error: The daily budget exceeds the owner's limit of 0.05 USDT.",
+      "summaryAfter": { "effective": "50000", "source": "ceiling", "own": null }
+    },
+    {
+      "id": "VAL-LIVE-003.3",
+      "assertion": "VAL-LIVE-003",
+      "action": "W sets its own budget to 0.03",
+      "request": "bun scripts/budget-demo.ts set-own --wallet 0xeD0c…427c --amount 0.03 --base-url https://market.bflabs.app",
+      "httpStatus": 200,
+      "outcome": "effective 0.03 USDT (source own)",
+      "summaryAfter": { "userBudget": { "effective": "30000", "source": "own", "ceiling": { "dailyLimit": "50000", "agentId": "2" }, "own": { "dailyLimit": "30000", "cappedByCeiling": false } } }
+    },
+    {
+      "id": "VAL-LIVE-004.1",
+      "assertion": "VAL-LIVE-004",
+      "action": "W calls llm-gpt-6-astra (fixed quote 69000) with ceiling 0.05 + own 0.03 in force",
+      "request": "POST /api/services/llm-gpt-6-astra/call with a Permit2 upto payment signed by W (scripts/llm-pay-demo.ts --network botchain-testnet --send)",
+      "httpStatus": 429,
+      "outcome": "{\"error\":\"Daily budget set by the agent owner is reached.\"}",
+      "sideEffects": "no on-chain transfer, no wallet_spend row, /api/receipts?payer=W empty, summary spent.all.charged unchanged (0)",
+      "note": "The quote 69000 exceeds both the 50000 ceiling and the 30000 own value, and the contract's check order (architecture §2.5, VAL-LEDGER-015, src/store.ts holdSpend) reports the owner ceiling first. See step VAL-LIVE-004.1b for the same rejection reported by the wallet value."
+    },
+    {
+      "id": "VAL-LIVE-004.2",
+      "assertion": "VAL-LIVE-004",
+      "action": "W calls llm-glm-5-3 (quote 19040) with a tiny prompt",
+      "request": "POST /api/services/llm-glm-5-3/call with a Permit2 upto payment signed by W; body {\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ok\"}],\"max_tokens\":16}",
+      "httpStatus": 200,
+      "outcome": "model reply \"ok\"; usage {promptTokens:26, completionTokens:14, totalTokens:40}; charged 71 atomic (<= 19040)",
+      "txHash": "0x5b1c0b3c25dd3bbf2decffbfe39915e9b44db13cf025fb9ca9cdcc0d2ddce727",
+      "explorerUrl": "https://scan.bohr.life/tx/0x5b1c0b3c25dd3bbf2decffbfe39915e9b44db13cf025fb9ca9cdcc0d2ddce727",
+      "settledAmountAtomic": "71",
+      "summaryBefore": { "spent": { "all": { "charged": "0", "pending": "0" }, "llm": { "charged": "0", "pending": "0" } }, "remaining": { "userBudget": "30000", "llm": "30000" } },
+      "summaryAfter": { "spent": { "all": { "charged": "71", "pending": "0" }, "llm": { "charged": "71", "pending": "0" } }, "remaining": { "userBudget": "29929", "llm": "29929" } },
+      "receipt": { "serviceId": "llm-glm-5-3", "scheme": "upto", "status": "delivered", "amount": "19040", "charged": "71" }
+    },
+    {
+      "id": "VAL-LIVE-005.1",
+      "assertion": "VAL-LIVE-005",
+      "action": "owner lowers the #2 ceiling to 0.01",
+      "request": "bun scripts/budget-demo.ts set-ceiling --agent 2 --wallet 0xeD0c…427c --amount 0.01",
+      "httpStatus": 200,
+      "outcome": "effective 0.01 USDT (source ceiling)",
+      "summaryAfter": { "userBudget": { "effective": "10000", "source": "ceiling", "ceiling": { "dailyLimit": "10000" }, "own": { "dailyLimit": "30000", "cappedByCeiling": true } } },
+      "note": "the wallet's stored own value stays 30000 (not rewritten)"
+    },
+    {
+      "id": "VAL-LIVE-005.2",
+      "assertion": "VAL-LIVE-005",
+      "action": "W calls llm-glm-5-3 (quote 19040 > 10000)",
+      "request": "POST /api/services/llm-glm-5-3/call with a Permit2 upto payment signed by W",
+      "httpStatus": 429,
+      "outcome": "{\"error\":\"Daily budget set by the agent owner is reached.\"}",
+      "sideEffects": "no transfer, summary spent.all.charged still 71, no new receipt"
+    },
+    {
+      "id": "VAL-LIVE-005.3",
+      "assertion": "VAL-LIVE-005",
+      "action": "owner removes the #2 ceiling",
+      "request": "bun scripts/budget-demo.ts remove-ceiling --agent 2 --wallet 0xeD0c…427c",
+      "httpStatus": 200,
+      "outcome": "effective 0.03 USDT (source own)",
+      "summaryAfter": { "userBudget": { "effective": "30000", "source": "own", "ceiling": null, "own": { "dailyLimit": "30000", "cappedByCeiling": false } } }
+    },
+    {
+      "id": "VAL-LIVE-004.1b",
+      "assertion": "VAL-LIVE-004",
+      "action": "W calls llm-gpt-6-astra (quote 69000) with only its own 0.03 in force (ceiling removed)",
+      "request": "POST /api/services/llm-gpt-6-astra/call with a Permit2 upto payment signed by W",
+      "httpStatus": 429,
+      "outcome": "{\"error\":\"Daily budget reached for this wallet.\"}",
+      "sideEffects": "no transfer, no receipt; summary spent.all.charged still 71",
+      "note": "This is the rejection the assertion names, produced with W's effective budget 0.03 (source own)."
+    },
+    {
+      "id": "VAL-LIVE-006.1",
+      "assertion": "VAL-LIVE-006",
+      "action": "W calls echo (exact 1000000 = 1 USDT) with own 0.03",
+      "request": "POST /api/services/echo/call with a Permit2 exact payment signed by W (scripts/agent-pay-demo.ts --network botchain-testnet --send)",
+      "httpStatus": 429,
+      "outcome": "{\"error\":\"Daily budget reached for this wallet.\"}",
+      "sideEffects": "no transfer, no wallet_spend row, /api/receipts?payer=W still holds only the glm receipt"
+    },
+    {
+      "id": "VAL-LIVE-006.2",
+      "assertion": "VAL-LIVE-006",
+      "action": "GET /skill.md limits text",
+      "request": "GET https://market.bflabs.app/skill.md",
+      "httpStatus": 200,
+      "outcome": "\"Daily LLM limits, read from config, apply to LLM (metered) services only: at most 5.00 USDT per wallet and 50.00 USDT platform-wide per UTC day, counting metered spend only. … `echo` is a fixed-price service and has no platform daily limit.\" and \"## 7. Daily budget … applies to every paid service, including `echo`.\""
+    },
+    {
+      "id": "VAL-LIVE-007.1",
+      "assertion": "VAL-LIVE-007",
+      "action": "owner sets a 0.01 ceiling on agent #0 (owner == agentWallet == buyer-demo)",
+      "request": "bun scripts/budget-demo.ts set-ceiling --agent 0 --wallet 0x4580…9ada --amount 0.01",
+      "httpStatus": 200,
+      "outcome": "effective 0.01 USDT (source ceiling)",
+      "summaryAfter": { "userBudget": { "effective": "10000", "source": "ceiling", "ceiling": { "dailyLimit": "10000", "agentId": "0", "setBy": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada" }, "own": null } }
+    },
+    {
+      "id": "VAL-LIVE-007.2",
+      "assertion": "VAL-LIVE-007",
+      "action": "buyer-demo calls llm-glm-5-3 (quote 19040 > 10000)",
+      "request": "POST /api/services/llm-glm-5-3/call with a Permit2 upto payment signed by buyer-demo",
+      "httpStatus": 429,
+      "outcome": "{\"error\":\"Daily budget set by the agent owner is reached.\"}",
+      "sideEffects": "no transfer, no new receipt"
+    },
+    {
+      "id": "VAL-LIVE-007.3",
+      "assertion": "VAL-LIVE-007",
+      "action": "owner raises the #0 ceiling to 0.05, then buyer-demo calls llm-glm-5-3",
+      "request": "bun scripts/budget-demo.ts set-ceiling --agent 0 --wallet 0x4580…9ada --amount 0.05, then POST /api/services/llm-glm-5-3/call with a Permit2 upto payment signed by buyer-demo (tiny prompt)",
+      "httpStatus": 200,
+      "outcome": "model reply \"ok\"; usage {promptTokens:26, completionTokens:34, totalTokens:60}; charged 135 atomic (<= 19040)",
+      "txHash": "0xa67d04097c9ece1a339c1ff60031ba7eb023308f7aff0dcb23fb51f6791f6077",
+      "explorerUrl": "https://scan.bohr.life/tx/0xa67d04097c9ece1a339c1ff60031ba7eb023308f7aff0dcb23fb51f6791f6077",
+      "settledAmountAtomic": "135",
+      "summaryBefore": { "spent": { "all": { "charged": "0", "pending": "0" }, "llm": { "charged": "0", "pending": "0" } }, "remaining": { "userBudget": "50000", "llm": "50000" } },
+      "summaryAfter": { "spent": { "all": { "charged": "135", "pending": "0" }, "llm": { "charged": "135", "pending": "0" } }, "remaining": { "userBudget": "49865", "llm": "49865" } }
+    },
+    {
+      "id": "VAL-LIVE-007.4",
+      "assertion": "VAL-LIVE-007",
+      "action": "owner removes the #0 ceiling so the demo wallet stays usable",
+      "request": "bun scripts/budget-demo.ts remove-ceiling --agent 0 --wallet 0x4580…9ada",
+      "httpStatus": 200,
+      "outcome": "effective none (no daily budget)"
+    },
+    {
+      "id": "VAL-LIVE-008.1",
+      "assertion": "VAL-LIVE-008",
+      "action": "MCP tools/list on production",
+      "request": "POST https://market.bflabs.app/mcp {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
+      "httpStatus": 200,
+      "outcome": "[\"platform_info\",\"search_services\",\"get_service\",\"call_service\",\"register_agent_info\",\"get_wallet_summary\",\"set_wallet_budget\"]"
+    },
+    {
+      "id": "VAL-LIVE-008.2",
+      "assertion": "VAL-LIVE-008",
+      "action": "MCP get_wallet_summary for W vs HTTP summary",
+      "request": "tools/call get_wallet_summary {\"wallet\":\"0xeD0c…427c\"}",
+      "httpStatus": 200,
+      "outcome": "structuredContent equals GET /api/wallets/0xeD0c…427c/summary (same wallet/day/userBudget/spent/remaining): {\"userBudget\":{\"effective\":\"30000\",\"source\":\"own\",\"ceiling\":null,\"own\":{\"dailyLimit\":\"30000\",\"cappedByCeiling\":false}},\"spent\":{\"all\":{\"charged\":\"71\",\"pending\":\"0\"},\"llm\":{\"charged\":\"71\",\"pending\":\"0\"}},\"remaining\":{\"userBudget\":\"29929\",\"llm\":\"29929\"}}",
+      "comparisonResult": "identical"
+    },
+    {
+      "id": "VAL-LIVE-008.3",
+      "assertion": "VAL-LIVE-008",
+      "action": "MCP set_wallet_budget without a signature returns a challenge",
+      "request": "tools/call set_wallet_budget {\"wallet\":\"0xeD0c…427c\",\"dailyLimit\":\"20000\"}",
+      "httpStatus": 200,
+      "outcome": "challenge message: title 'BF Market daily budget change', 'Purpose: wallet-budget', 'Domain: https://market.bflabs.app', 'Address: 0xeD0c…427c', \"Scope: wallet's own budget\", 'Wallet: 0xeD0c…427c', 'Daily budget: 0.02 USDT (20000)', 'Nonce: 0x6cbf8272b0844b1096194233dd629cf1', 'Chain ID: 968', plus issuedAt/expiresAt (expires 300 s later); summary unchanged"
+    },
+    {
+      "id": "VAL-LIVE-008.4",
+      "assertion": "VAL-LIVE-008",
+      "action": "MCP set_wallet_budget with W's signature sets the own budget",
+      "request": "tools/call set_wallet_budget {\"wallet\":\"0xeD0c…427c\",\"dailyLimit\":\"20000\",\"signer\":\"0xeD0c…427c\",\"signature\":\"0x…\"}",
+      "httpStatus": 200,
+      "outcome": "isError false; userBudget.own.dailyLimit = \"20000\"; GET /api/wallets/0xeD0c…427c/summary then shows {\"effective\":\"20000\",\"source\":\"own\",\"own\":{\"dailyLimit\":\"20000\"}}"
+    }
+  ],
+  "livePages": {
+    "assertion": "VAL-LIVE-009",
+    "tool": "agent-browser (session c0001a5adc0b, closed after the run)",
+    "combinations": "4 pages (/ , /market, /wallet/<W>, /docs) x 2 languages (zh, en) x 2 viewports (1440x900, 390x844) = 16 loads",
+    "results": {
+      "horizontalOverflow": "0 px on all 16 loads",
+      "avalancheFujiText": "absent on all 16 loads (body + title)",
+      "demoGVisualSystem": "present on all 16 loads (body background rgb(26, 18, 8), BF·MARKET ASCII wordmark)",
+      "consoleErrors": "none",
+      "pageErrors": "none",
+      "htmlLangAndTitle": [
+        { "path": "/", "zh": { "lang": "zh-CN", "title": "BF Market｜首页" }, "en": { "lang": "en", "title": "BF Market | Home" } },
+        { "path": "/market", "zh": { "lang": "zh-CN", "title": "BF Market｜市场" }, "en": { "lang": "en", "title": "BF Market | Market" } },
+        { "path": "/wallet/<W>", "zh": { "lang": "zh-CN", "title": "BF Market｜钱包" }, "en": { "lang": "en", "title": "BF Market | Wallet" } },
+        { "path": "/docs", "zh": { "lang": "zh-CN", "title": "BF Market｜文档" }, "en": { "lang": "en", "title": "BF Market | Docs" } }
+      ]
+    },
+    "walletPageContent": {
+      "path": "/wallet/0xeD0c5d27b51839FE943f2FB5789921d5120D427c?lang=zh",
+      "observed": "今日已扣款 0.000071 USDT; 处理中 0.000000 USDT; 生效的每日预算 0.020000 USDT (预算来源: 钱包自设预算); 大模型平台限额 今日已用 0.000071 / 5.000000 USDT; 服务报价 (echo / llm-claude-opus-5-5 / llm-gpt-6-astra 今日不可调用, llm-glm-5-3 今日可调用); 最近收据 2026/10/07 12:20:35 llm-glm-5-3 0.000071 USDT 已交付 0x5b1c…e727",
+      "englishPage": "same figures with English labels on /wallet/<W>?lang=en"
+    },
+    "screenshots": [
+      "docs/evidence/screenshots/live-wallet-zh-1440x900.png",
+      "docs/evidence/screenshots/live-home-en-390x844.png"
+    ],
+    "note": "screenshots kept for the two loads that carry the assertion's specific checks; the other 14 loads were inspected in the same run and logged (no overflow, no Avalanche/Fuji, correct lang/title, no console or page errors)"
+  },
+  "restore": {
+    "actions": [
+      "remove-own for W (was 20000 set over MCP): 200, effective none",
+      "remove-ceiling for agent #0 (was 50000): 200, effective none",
+      "agent #2 ceiling was already removed in VAL-LIVE-005.3"
+    ],
+    "summaryWAfter": { "userBudget": null, "remaining": { "userBudget": null, "llm": "4999929" }, "spent": { "all": { "charged": "71", "pending": "0" }, "llm": { "charged": "71", "pending": "0" } } },
+    "summaryOwnerAfter": { "userBudget": null, "remaining": { "userBudget": null, "llm": "4999865" }, "spent": { "all": { "charged": "135", "pending": "0" }, "llm": { "charged": "135", "pending": "0" } } },
+    "confirmedNoUserBudget": true
+  },
+  "balances": {
+    "before": {
+      "buyerDemo": { "usdtAtomic": "5755670", "tBotWei": "28521540000000000" },
+      "W": { "usdtAtomic": "1200000", "tBotWei": "9055020000000000" },
+      "provider": { "usdtAtomic": "3044330" }
+    },
+    "after": {
+      "buyerDemo": { "usdtAtomic": "5755535", "tBotWei": "28521540000000000" },
+      "W": { "usdtAtomic": "1199929", "tBotWei": "9055020000000000" },
+      "provider": { "usdtAtomic": "3044536" }
+    },
+    "delta": {
+      "buyerDemo": { "usdtAtomic": "-135" },
+      "W": { "usdtAtomic": "-71" },
+      "provider": { "usdtAtomic": "+206" },
+      "totalUsdtAtomicMoved": "206",
+      "tBotSpentByTestWallets": "0 (settlement gas is paid by the platform ops wallet)"
+    }
+  },
+  "rejections": {
+    "astraCeilingFirstPrecedence": {
+      "context": "VAL-LIVE-004 expects `Daily budget reached for this wallet.` for the astra call while the ceiling 0.05 is also in force.",
+      "observation": "With ceiling 50000 and own 30000, the astra quote 69000 exceeds both, and the contract's check order (architecture §2.5; VAL-LEDGER-015; src/store.ts holdSpend checks the owner ceiling first) returns `Daily budget set by the agent owner is reached.`.",
+      "resolution": "Recorded both variants live: with the ceiling in force the owner message (step VAL-LIVE-004.1), and with only the own 0.03 value in force the exact text the assertion names (step VAL-LIVE-004.1b). The product behaviour matches the authoritative precedence rule and the unit-tested VAL-LEDGER-015; no production code was changed in this feature."
+    }
+  },
+  "secretHygiene": {
+    "privateKeysInFile": false,
+    "apiKeysInFile": false,
+    "seedOrBearerTokenInFile": false,
+    "grep": "a recursive search over this file for private-key, API-key, seed-token and bearer-token markers returns no match; the four 0x-prefixed 64-hex strings it contains are all on-chain transaction hashes, listed below (no key material was ever written here)",
+    "transactionHashes": [
+      "0x5b1c0b3c25dd3bbf2decffbfe39915e9b44db13cf025fb9ca9cdcc0d2ddce727",
+      "0xa67d04097c9ece1a339c1ff60031ba7eb023308f7aff0dcb23fb51f6791f6077"
+    ]
+  }
+}
