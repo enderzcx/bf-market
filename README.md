@@ -92,6 +92,13 @@ AGENT_PRIVATE_KEY=0x... bun scripts/agent-pay-demo.ts \
 
 `llm-pay-demo.ts` 用同样的 `--network fuji --send` 跑按量计费的 upto 路径。
 
+视频理解服务 `video-gemini-3-8-flash` 接收 `{"video_url","prompt"}`，服务端下载视频后交给 Gemini 3.8 Flash。一个看不了视频的剪辑 agent 用它审片、改片四轮的演示见 `docs/evidence/fuji-video-review-2026-10-07.md`：
+
+```sh
+AGENT_PRIVATE_KEY=0x... bun scripts/video-review-demo.ts --send \
+  --video https://market-fuji.bflabs.app/demo/pelican-neon-ride-v4.mp4 --out review.json
+```
+
 ## BeefAPI 接入
 
 BeefAPI 适配代码位于独立工作树 `codex/fuji-settlement`。它增加默认关闭、独立鉴权的测试接口。BeefAPI 原账本负责实际可用余额、冻结和已提现记录，结算服务不重复计算或复制可用佣金余额。

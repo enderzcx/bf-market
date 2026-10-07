@@ -732,12 +732,14 @@ test('providers groups the catalog by provider agent with draft profile fields',
     'llm-glm-5-3',
     'llm-claude-opus-5-5',
     'llm-gpt-6-astra',
+    'video-gemini-3-8-flash',
   ]);
   expect(services[0]).toMatchObject({ pricing: 'exact', price: '1000000' });
   expect(services.slice(1).map((service) => service.quoteMax)).toEqual([
     '19040',
     '36800',
     '69000',
+    '38600',
   ]);
   for (const service of services.slice(1)) {
     expect(service.pricing).toBe('metered');

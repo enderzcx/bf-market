@@ -276,6 +276,8 @@ Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):
 
 Quote per call for a metered service: \`ceil(${LLM_QUOTE_INPUT_TOKENS} input tokens x input_price) + ceil(${LLM_QUOTE_OUTPUT_TOKENS} output tokens x output_price)\`, the same fixed maximum for every request. Upstream models add hidden prompt tokens that the request does not show, so the quote sits above a typical call; with \`upto\` only the actual usage is charged, so the maximum costs nothing extra. The "Quote per call (max)" column shows it per model, and the 402 \`amount\` is that same fixed quote.
 
+Video services (ids starting with \`video-\`) watch a video for you. Their body is \`{"video_url","prompt","max_tokens"?}\` instead of chat messages: \`video_url\` is a public https link to an mp4, mov or webm file of at most 20 MB, and the quote allows 64000 input tokens because video is token-heavy. If the server cannot fetch the video, nothing is charged.
+
 Daily LLM limits, read from config, apply to LLM (metered) services only: at most ${payerDaily} USDT per wallet and ${globalDaily} USDT platform-wide per UTC day, counting metered spend only. Hitting either returns \`429\` with \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\`, and nothing is settled. \`echo\` is a fixed-price service and has no platform daily limit.
 
 ${serviceTable(catalog)}

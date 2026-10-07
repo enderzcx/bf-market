@@ -1,0 +1,23 @@
+{
+  "market": "https://market-fuji.bflabs.app",
+  "service": "https://market-fuji.bflabs.app/api/services/video-gemini-3-8-flash/call",
+  "network": "eip155:43113",
+  "buyer": "0xED38064D9af2175d564344B15185663bdaeb31c6",
+  "payTo": "0x24C2F88a3DfC7a14F44E9F5e3A903434794e277e",
+  "asset": "0x5425890298aed601595a70AB815c96711a31Bc65",
+  "quoteMaxAtomic": "38600",
+  "video": "https://market-fuji.bflabs.app/demo/pelican-neon-ride-v3.mp4",
+  "prompt": "You are the reviewer for a 20-second animated short. The editor who made it cannot watch video, so be concrete.\nIntended beats: a pelican rides a bicycle along a neon synthwave seafront; around 0:07 a fish leaps out of the sea into its throat pouch while a FISH.EXE billboard fills to 100%; around 0:12 it hops over a traffic cone; around 0:17 it brakes to a stop and sunglasses drop onto its face.\n1) List what actually happens with mm:ss timestamps.\n2) For each intended beat, say whether it reads clearly, and if not, why.\n3) List the visual problems an editor should fix, most severe first, each with a timestamp and a concrete fix.\nKeep it under 350 words.",
+  "httpStatus": 200,
+  "elapsedMs": 34796,
+  "model": "gemini-3.8-flash",
+  "usage": {
+    "prompt_tokens": 1495,
+    "completion_tokens": 646,
+    "total_tokens": 2141
+  },
+  "chargedAtomic": "2686",
+  "permit2ApproveTx": null,
+  "settleTx": "0xebcb78ebd7fbd7ec6cd9b49e82db520e895721c89173225040c387b3e39d603d",
+  "review": "### 1. Actual Timeline of Events\n- **00:00–00:05**: Pelican cycles steadily along the seafront.\n- **00:06**: A glowing fish leaps behind the bike; a retro \"FISH.EXE\" dialogue box scrolls in from top-right.\n- **00:07–00:08**: The fish abruptly vanishes without entering the beak. The \"FISH.EXE\" progress bar hits 100% (\"Caught 1 fish\").\n- **00:09**: Billboard exits screen left.\n- **00:10–00:11**: An orange traffic cone scrolls in along the ground from the right.\n- **00:12**: Pelican bunny-hops vertically over the cone.\n- **00:13–00:16**: Lands and continues pedaling smoothly.\n- **00:17**: Brake sparks emit from rear wheel; pelican's beak opens slightly.\n- **00:18–00:19**: Sunglasses fall from top of frame and land on pelican’s eyes.\n\n---\n\n### 2. Beat Readability\n- **Seafroat ride (0:00–0:05)**: **Reads clearly.** Neon synthwave aesthetic, cycling loop, and parallax background are well-established.\n- **Fish leap into pouch / FISH.EXE 100% (0:07)**: **Fails to read.** The fish jumps, but instantly disappears into thin air at 00:07 instead of landing in the pelican’s pouch. The dialogue box fills correctly, but the physical interaction is missing.\n- **Cone hop (0:12)**: **Reads clearly.** Clean arc, good clearance, clear obstacle recognition.\n- **Brake stop & sunglasses drop (0:17)**: **Partially reads.** The sunglasses drop and sparks land well, but the bike wheels and pedals never stop spinning—it does not actually come to a full stop.\n\n---\n\n### 3. Visual Fixes (Most Severe First)\n\n1. **Missing Fish Catch (00:06–00:07)**  \n   *Fix:* Animate the fish traveling along a parabolic arc directly into the pelican’s open beak, followed by a throat-pouch bulge/swallow deformation before the beak snaps shut.\n\n2. **Bike Doesn't Stop Moving (00:17–00:19)**  \n   *Fix:* Freeze the pedaling cycle and wheel rotation immediately upon the brake spark trigger (00:17) to sell the complete stop before the sunglasses land.\n\n3. **Billboard Anchoring & Layering (00:06–00:09)**  \n   *Fix:* The \"FISH.EXE\" window floats awkwardly as a screen overlay rather than an in-world billboard. Anchor it to background scaffolding or integrate it onto a building facade so it moves realistically with camera parallax."
+}

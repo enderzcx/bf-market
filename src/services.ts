@@ -4,6 +4,8 @@ import {
   LLM_QUOTE_INPUT_TOKENS,
   LLM_QUOTE_OUTPUT_TOKENS,
   METERED_PRICING,
+  VIDEO_MAX_BYTES,
+  VIDEO_MAX_PROMPT_CHARS,
   meteredUpperBound,
   type MeteredPricing,
 } from './llm.ts';
@@ -65,14 +67,48 @@ function usdt(atomic: bigint): string {
 }
 
 function meteredDescription(modelId: string, pricing: MeteredPricing): string {
+  const video = pricing.input === 'video';
+  const quoteInput = pricing.quoteInputTokens ?? LLM_QUOTE_INPUT_TOKENS;
   return [
-    `LLM chat completion (model ${modelId}) served through BeefAPI.`,
+    video
+      ? `Video understanding (model ${modelId}, native multimodal) served through BeefAPI: send a video URL and a question, get the model's answer about what happens in the video.`
+      : `LLM chat completion (model ${modelId}) served through BeefAPI.`,
     `Priced per token: $${usd(pricing.inputMicroUsdPerMillion)} per 1M input tokens and $${usd(pricing.outputMicroUsdPerMillion)} per 1M output tokens, charged in USDT by actual usage.`,
-    `The 402 quotes a fixed per-call maximum of ${usdt(meteredUpperBound(pricing))} USDT, the same for every request (the price of ${LLM_QUOTE_INPUT_TOKENS} input and ${LLM_QUOTE_OUTPUT_TOKENS} output tokens). Upstream models add hidden prompt tokens, so the maximum is above a typical call; only the actual usage is charged, at most that maximum and possibly lower or zero.`,
+    `The 402 quotes a fixed per-call maximum of ${usdt(meteredUpperBound(pricing))} USDT, the same for every request (the price of ${quoteInput} input and ${LLM_QUOTE_OUTPUT_TOKENS} output tokens). Upstream models add hidden prompt tokens, so the maximum is above a typical call; only the actual usage is charged, at most that maximum and possibly lower or zero.`,
     'Payment uses the x402 `upto` scheme only.',
-    'Input is an OpenAI chat body: {"messages":[{"role","content"}],"max_tokens"?}; total content is at most 8000 characters, max_tokens defaults to 1000 and is capped at 2000.',
+    video
+      ? `Input is {"video_url","prompt","max_tokens"?}: video_url is a public https link to an mp4, mov or webm file of at most ${VIDEO_MAX_BYTES / 1024 / 1024} MB, prompt is at most ${VIDEO_MAX_PROMPT_CHARS} characters, max_tokens defaults to 1000 and is capped at 2000. If the video cannot be fetched, nothing is charged.`
+      : 'Input is an OpenAI chat body: {"messages":[{"role","content"}],"max_tokens"?}; total content is at most 8000 characters, max_tokens defaults to 1000 and is capped at 2000.',
     'Non-streaming only: omit stream or set it to false.',
   ].join(' ');
+}
+
+function videoInputSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties: {
+      video_url: {
+        type: 'string',
+        format: 'uri',
+        description: `Public https URL of an mp4, mov or webm video, at most ${VIDEO_MAX_BYTES / 1024 / 1024} MB.`,
+      },
+      prompt: {
+        type: 'string',
+        maxLength: VIDEO_MAX_PROMPT_CHARS,
+        description: 'What to ask about the video.',
+      },
+      max_tokens: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 2000,
+        default: 1000,
+        description: 'Maximum completion tokens to generate.',
+      },
+      stream: { type: 'boolean', const: false, description: 'Streaming is not supported.' },
+    },
+    required: ['video_url', 'prompt'],
+    additionalProperties: true,
+  };
 }
 
 function meteredInputSchema(): Record<string, unknown> {
@@ -134,6 +170,7 @@ function meteredDefinitions(
 ): ServiceDefinition[] {
   return services.map(({ serviceId, modelId }) => {
     const pricing = METERED_PRICING[modelId]!;
+    const video = pricing.input === 'video';
     return {
       serviceId,
       providerAgentId,
@@ -141,15 +178,21 @@ function meteredDefinitions(
       pricing: { mode: 'metered' as const, pricing },
       description: meteredDescription(modelId, pricing),
       deliver: 'metered',
-      inputSchema: meteredInputSchema(),
+      inputSchema: video ? videoInputSchema() : meteredInputSchema(),
       outputSchema: meteredOutputSchema(),
-      inputExample: {
-        messages: [{ role: 'user', content: 'Hello' }],
-        max_tokens: 256,
-      },
+      inputExample: video
+        ? {
+            video_url: 'https://example.com/clip.mp4',
+            prompt: 'List the key events with timestamps.',
+            max_tokens: 800,
+          }
+        : {
+            messages: [{ role: 'user', content: 'Hello' }],
+            max_tokens: 256,
+          },
       outputExample: {
         model: modelId,
-        content: 'Hello! How can I help?',
+        content: video ? '00:03 A pelican catches a fish.' : 'Hello! How can I help?',
         usage: { prompt_tokens: 3, completion_tokens: 8, total_tokens: 11 },
         charged: '26',
         upstream_request_id: 'chatcmpl-example',
@@ -200,6 +243,7 @@ export function createServiceCatalog(opts: {
         { serviceId: 'llm-glm-5-3', modelId: 'glm-5.3' },
         { serviceId: 'llm-claude-opus-5-5', modelId: 'claude-opus-5-5' },
         { serviceId: 'llm-gpt-6-astra', modelId: 'gpt-6-astra' },
+        { serviceId: 'video-gemini-3-8-flash', modelId: 'gemini-3.8-flash' },
       ]),
     );
   }
