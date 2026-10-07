@@ -144,7 +144,7 @@ export function createMcpEndpoint(opts: {
           },
           maxPrice: {
             type: 'string',
-            description: "Price cap in the token's smallest unit (USDT has 6 decimals).",
+            description: "Price cap in the settlement token's smallest unit (6 decimals).",
           },
           network: { type: 'string', description: 'Filter by network, for example eip155:968.' },
           limit: { type: 'number', description: 'Maximum number of entries to return.' },
@@ -210,7 +210,7 @@ export function createMcpEndpoint(opts: {
           },
           dailyLimit: {
             type: ['string', 'null'],
-            description: 'New daily limit in atomic USDT, or null to remove the limit.',
+            description: 'New daily limit in atomic units of the settlement token, or null to remove the limit.',
           },
           scope: {
             type: 'string',

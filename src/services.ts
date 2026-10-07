@@ -66,15 +66,15 @@ function usdt(atomic: bigint): string {
   return frac ? `${whole}.${frac}` : `${whole}.00`;
 }
 
-function meteredDescription(modelId: string, pricing: MeteredPricing): string {
+function meteredDescription(modelId: string, pricing: MeteredPricing, symbol: string): string {
   const video = pricing.input === 'video';
   const quoteInput = pricing.quoteInputTokens ?? LLM_QUOTE_INPUT_TOKENS;
   return [
     video
       ? `Video understanding (model ${modelId}, native multimodal) served through BeefAPI: send a video URL and a question, get the model's answer about what happens in the video.`
       : `LLM chat completion (model ${modelId}) served through BeefAPI.`,
-    `Priced per token: $${usd(pricing.inputMicroUsdPerMillion)} per 1M input tokens and $${usd(pricing.outputMicroUsdPerMillion)} per 1M output tokens, charged in USDT by actual usage.`,
-    `The 402 quotes a fixed per-call maximum of ${usdt(meteredUpperBound(pricing))} USDT, the same for every request (the price of ${quoteInput} input and ${LLM_QUOTE_OUTPUT_TOKENS} output tokens). Upstream models add hidden prompt tokens, so the maximum is above a typical call; only the actual usage is charged, at most that maximum and possibly lower or zero.`,
+    `Priced per token: $${usd(pricing.inputMicroUsdPerMillion)} per 1M input tokens and $${usd(pricing.outputMicroUsdPerMillion)} per 1M output tokens, charged in ${symbol} by actual usage.`,
+    `The 402 quotes a fixed per-call maximum of ${usdt(meteredUpperBound(pricing))} ${symbol}, the same for every request (the price of ${quoteInput} input and ${LLM_QUOTE_OUTPUT_TOKENS} output tokens). Upstream models add hidden prompt tokens, so the maximum is above a typical call; only the actual usage is charged, at most that maximum and possibly lower or zero.`,
     'Payment uses the x402 `upto` scheme only.',
     video
       ? `Input is {"video_url","prompt","max_tokens"?}: video_url is a public https link to an mp4, mov or webm file of at most ${VIDEO_MAX_BYTES / 1024 / 1024} MB, prompt is at most ${VIDEO_MAX_PROMPT_CHARS} characters, max_tokens defaults to 1000 and is capped at 2000. If the video cannot be fetched, nothing is charged.`
@@ -142,7 +142,7 @@ function meteredInputSchema(): Record<string, unknown> {
   };
 }
 
-function meteredOutputSchema(): Record<string, unknown> {
+function meteredOutputSchema(symbol: string): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -157,7 +157,7 @@ function meteredOutputSchema(): Record<string, unknown> {
         },
         required: ['prompt_tokens', 'completion_tokens'],
       },
-      charged: { type: 'string', description: 'Actual charged amount in USDT atomic units.' },
+      charged: { type: 'string', description: `Actual charged amount in ${symbol} atomic units.` },
       upstream_request_id: { type: ['string', 'null'] },
     },
     required: ['model', 'content', 'usage', 'charged'],
@@ -167,6 +167,7 @@ function meteredOutputSchema(): Record<string, unknown> {
 function meteredDefinitions(
   providerAgentId: string,
   services: Array<{ serviceId: string; modelId: string }>,
+  symbol: string,
 ): ServiceDefinition[] {
   return services.map(({ serviceId, modelId }) => {
     const pricing = METERED_PRICING[modelId]!;
@@ -176,10 +177,10 @@ function meteredDefinitions(
       providerAgentId,
       price: 0n,
       pricing: { mode: 'metered' as const, pricing },
-      description: meteredDescription(modelId, pricing),
+      description: meteredDescription(modelId, pricing, symbol),
       deliver: 'metered',
       inputSchema: video ? videoInputSchema() : meteredInputSchema(),
-      outputSchema: meteredOutputSchema(),
+      outputSchema: meteredOutputSchema(symbol),
       inputExample: video
         ? {
             video_url: 'https://example.com/clip.mp4',
@@ -244,7 +245,7 @@ export function createServiceCatalog(opts: {
         { serviceId: 'llm-claude-opus-5-5', modelId: 'claude-opus-5-5' },
         { serviceId: 'llm-gpt-6-astra', modelId: 'gpt-6-astra' },
         { serviceId: 'video-gemini-3-8-flash', modelId: 'gemini-3.8-flash' },
-      ]),
+      ], opts.config.network.asset.symbol),
     );
   }
   const byId = new Map(definitions.map((definition) => [definition.serviceId, definition]));

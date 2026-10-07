@@ -109,7 +109,7 @@ function PromptBox() {
 }
 
 function LiveStats() {
-  const { t } = useT();
+  const { t, token } = useT();
   const { stats, failed, errorText } = useLiveStats();
   const settledAmount =
     stats?.settledUsdt == null ? '—' : formatAtomicUsdt(stats.settledUsdt) ?? '—';
@@ -133,7 +133,7 @@ function LiveStats() {
             <dd className='market-mono'>
               {value}
               {label === 'statsSettled' && value !== '—' && (
-                <span className='home-stat-unit'> USDT</span>
+                <span className='home-stat-unit'> {token}</span>
               )}
             </dd>
           </div>

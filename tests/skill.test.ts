@@ -166,7 +166,7 @@ test('skill.md is precise about results, schemes, approvals and charges', async 
   // The metered quote is fixed, and the daily limits come from config.
   expect(md).toContain('Quote per call (max)');
   expect(md).toContain('the same fixed maximum for every request');
-  expect(md).toContain('at most 5.00 USDT per wallet and 50.00 USDT platform-wide');
+  expect(md).toContain('at most 5.00 USDC per wallet and 50.00 USDC platform-wide');
 
   // Install command and the tested client versions.
   expect(md).toContain('bun add viem @x402/core @x402/evm');
@@ -485,7 +485,7 @@ test('skill.md scopes the platform daily limits to LLM services only', async () 
   const md = await (await req(app, '/skill.md')).text();
 
   expect(md).toContain('apply to LLM (metered) services only');
-  expect(md).toContain('at most 5.00 USDT per wallet and 50.00 USDT platform-wide');
+  expect(md).toContain('at most 5.00 USDC per wallet and 50.00 USDC platform-wide');
   // Echo is never described as covered by the platform caps.
   expect(md).not.toMatch(/echo[^.]*platform(-| )wide/i);
 });

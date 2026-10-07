@@ -378,7 +378,7 @@ test('set_wallet_budget without a signature returns a challenge and changes noth
   expect(issued.isError).toBeUndefined();
   const challenge = issued.structuredContent as { message: string; expiresAt: number };
   expect(challenge.message).toContain("Scope: wallet's own budget");
-  expect(challenge.message).toContain('Daily budget: 0.02 USDT (20000)');
+  expect(challenge.message).toContain('Daily budget: 0.02 USDC (20000)');
   expect(typeof challenge.expiresAt).toBe('number');
 
   // Issuing a challenge writes no budget row.
@@ -499,7 +499,7 @@ test('set_wallet_budget returns the same English errors as HTTP', async () => {
   ).result as ToolResult;
   expect(over.isError).toBe(true);
   expect(over.content?.[0]?.text).toBe(
-    "The daily budget exceeds the owner's limit of 0.05 USDT.",
+    "The daily budget exceeds the owner's limit of 0.05 USDC.",
   );
 
   // The owner cannot sign for the wallet's own budget.

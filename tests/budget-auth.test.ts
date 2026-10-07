@@ -317,7 +317,7 @@ test('budget challenge message carries the full signed intent', async () => {
   expect(lines).toContain(`Address: ${O_ADDR}`);
   expect(lines).toContain('Scope: owner ceiling for agent #7');
   expect(lines).toContain(`Wallet: ${W_ADDR}`);
-  expect(lines).toContain('Daily budget: 0.05 USDT (50000)');
+  expect(lines).toContain('Daily budget: 0.05 USDC (50000)');
   expect(lines.some((line) => /^Nonce: 0x[0-9a-f]+$/.test(line))).toBe(true);
   expect(lines).toContain(`Chain ID: ${CHAIN_ID}`);
   expect(lines.some((line) => line.startsWith('Issued at: '))).toBe(true);
@@ -341,7 +341,7 @@ test('budget challenge message carries the full signed intent', async () => {
     signer: W_ADDR,
     dailyLimit: '30000',
   });
-  expect(small.message.split('\n')).toContain('Daily budget: 0.03 USDT (30000)');
+  expect(small.message.split('\n')).toContain('Daily budget: 0.03 USDC (30000)');
 });
 
 test('challenge issuance validates format and range without touching the chain', async () => {
@@ -368,7 +368,7 @@ test('challenge issuance validates format and range without touching the chain',
   expect((await bad({ ...base, dailyLimit: 'abc' })).error).toBe('Invalid daily budget.');
   expect((await bad({ ...base, dailyLimit: '-1' })).error).toBe('Invalid daily budget.');
   expect((await bad({ ...base, dailyLimit: '5000001' })).error).toBe(
-    'The daily budget cannot exceed 5 USDT.',
+    'The daily budget cannot exceed 5 USDC.',
   );
   await bad({ scope: 'ceiling', wallet: W_ADDR, signer: O_ADDR, dailyLimit: '10000' });
   await bad({ ...base, scope: 'other', dailyLimit: '10000' });
@@ -585,7 +585,7 @@ test("an own budget above the owner's ceiling names the ceiling", async () => {
     dailyLimit: '100000',
   });
   expect(first.status).toBe(400);
-  expect((await body(first)).error).toBe("The daily budget exceeds the owner's limit of 0.05 USDT.");
+  expect((await body(first)).error).toBe("The daily budget exceeds the owner's limit of 0.05 USDC.");
   expect((await summaryOf(app, W_ADDR)).userBudget.own).toBeNull();
 
   expect((await ceilingOf('10000')).status).toBe(200);
@@ -596,7 +596,7 @@ test("an own budget above the owner's ceiling names the ceiling", async () => {
     dailyLimit: '20000',
   });
   expect(second.status).toBe(400);
-  expect((await body(second)).error).toBe("The daily budget exceeds the owner's limit of 0.01 USDT.");
+  expect((await body(second)).error).toBe("The daily budget exceeds the owner's limit of 0.01 USDC.");
   expect((await summaryOf(app, W_ADDR)).userBudget.own).toBeNull();
 });
 
@@ -621,7 +621,7 @@ test('an own budget on an unregistered wallet is bounded by the configured max o
     }),
   });
   expect(over.status).toBe(400);
-  expect((await body(over)).error).toBe('The daily budget cannot exceed 5 USDT.');
+  expect((await body(over)).error).toBe('The daily budget cannot exceed 5 USDC.');
 
   expect((await set('20000')).status).toBe(200);
   expect((await set(null)).status).toBe(200);
@@ -926,7 +926,7 @@ test('a same-address agent accepts both scopes', async () => {
     dailyLimit: '50000',
   });
   expect(over.status).toBe(400);
-  expect((await body(over)).error).toBe("The daily budget exceeds the owner's limit of 0.04 USDT.");
+  expect((await body(over)).error).toBe("The daily budget exceeds the owner's limit of 0.04 USDC.");
 });
 
 test('every successful write appends exactly one audit event', async () => {
@@ -1026,7 +1026,7 @@ test('budgetMax comes from SETTLEMENT_BUDGET_MAX', async () => {
     }),
   });
   expect(over.status).toBe(400);
-  expect((await body(over)).error).toBe('The daily budget cannot exceed 3 USDT.');
+  expect((await body(over)).error).toBe('The daily budget cannot exceed 3 USDC.');
 
   const atMax = await submit(app, P, {
     scope: 'wallet',
@@ -1066,7 +1066,7 @@ test('the budget-demo CLI sets, removes and shows both scopes', async () => {
     env,
     log,
   );
-  expect(output()).toContain('effective 0.05 USDT (source ceiling)');
+  expect(output()).toContain('effective 0.05 USDC (source ceiling)');
   expect((ceiling.summary!.userBudget as { source: string }).source).toBe('ceiling');
 
   lines.length = 0;
@@ -1075,7 +1075,7 @@ test('the budget-demo CLI sets, removes and shows both scopes', async () => {
     env,
     log,
   );
-  expect(output()).toContain('effective 0.03 USDT (source own)');
+  expect(output()).toContain('effective 0.03 USDC (source own)');
   expect((own.summary!.userBudget as { effective: string }).effective).toBe('30000');
 
   // A rejected write surfaces the server error and never prints a key.
@@ -1086,7 +1086,7 @@ test('the budget-demo CLI sets, removes and shows both scopes', async () => {
   ).catch((error: unknown) => error as Error);
   expect(rejected).toBeInstanceOf(Error);
   expect((rejected as Error).message).toBe(
-    "The daily budget exceeds the owner's limit of 0.05 USDT.",
+    "The daily budget exceeds the owner's limit of 0.05 USDC.",
   );
   expect(output()).not.toContain(env.AGENT_PRIVATE_KEY);
 
@@ -1101,7 +1101,7 @@ test('the budget-demo CLI sets, removes and shows both scopes', async () => {
     env,
     log,
   );
-  expect(output()).toContain('effective 0.03 USDT (source own)');
+  expect(output()).toContain('effective 0.03 USDC (source own)');
   expect((removed.summary!.userBudget as { source: string }).source).toBe('own');
 
   const help = await budgetDemo([], env, log);

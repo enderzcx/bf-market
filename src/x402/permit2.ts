@@ -118,7 +118,6 @@ const REASON_TEXT: Record<string, string> = {
   permit2_token_mismatch: 'Payment token does not match the requirements.',
   invalid_permit2_signature: 'Invalid payment signature.',
   permit2_allowance_required: 'Buyer has not approved Permit2, or the allowance is too low.',
-  permit2_insufficient_balance: 'Buyer has insufficient USDT balance.',
   permit2_proxy_not_deployed: 'Settlement proxy is not deployed.',
   permit2_simulation_failed: 'Payment cannot be settled.',
   permit2_invalid_nonce: 'Payment authorization was already used.',
@@ -126,8 +125,11 @@ const REASON_TEXT: Record<string, string> = {
   unsupported_payload_type: 'Invalid payment payload.',
 };
 
-function reasonText(reason: string | undefined): string {
+const insufficientBalance = (symbol: string) => `Buyer has insufficient ${symbol} balance.`;
+
+function reasonText(reason: string | undefined, symbol: string): string {
   if (!reason) return 'Invalid payment payload.';
+  if (reason === 'permit2_insufficient_balance') return insufficientBalance(symbol);
   return REASON_TEXT[reason] ?? 'Payment failed validation.';
 }
 
@@ -229,7 +231,9 @@ export function createRpcPermit2Facilitator(input: {
   finalityTimeoutMs?: number;
   finalityPollMs?: number;
 }): Permit2Facilitator {
-  const finalized = profileForChainId(input.chainId)?.finality.kind === 'finalized';
+  const profile = profileForChainId(input.chainId);
+  const finalized = profile?.finality.kind === 'finalized';
+  const symbol = profile?.asset.symbol ?? 'token';
   const finalityTimeoutMs = input.finalityTimeoutMs ?? 30_000;
   const finalityPollMs = input.finalityPollMs ?? 500;
   const chain = defineChain({
@@ -325,7 +329,7 @@ export function createRpcPermit2Facilitator(input: {
       throw new ServiceError(402, 'Payment token is not deployed.');
     }
     if (balance < required) {
-      throw new ServiceError(402, 'Buyer has insufficient USDT balance.');
+      throw new ServiceError(402, insufficientBalance(symbol));
     }
     if (allowance < required) {
       throw new ServiceError(402, 'Buyer has not approved Permit2, or the allowance is too low.');
@@ -360,7 +364,7 @@ export function createRpcPermit2Facilitator(input: {
         requirements as unknown as Parameters<typeof scheme.verify>[1],
       );
       if (!result.isValid) {
-        throw new ServiceError(402, reasonText(result.invalidReason));
+        throw new ServiceError(402, reasonText(result.invalidReason, symbol));
       }
       return {
         payer,
@@ -386,7 +390,7 @@ export function createRpcPermit2Facilitator(input: {
         requirements as unknown as Parameters<typeof uptoScheme.verify>[1],
       );
       if (!result.isValid) {
-        throw new ServiceError(402, reasonText(result.invalidReason));
+        throw new ServiceError(402, reasonText(result.invalidReason, symbol));
       }
       return {
         payer,

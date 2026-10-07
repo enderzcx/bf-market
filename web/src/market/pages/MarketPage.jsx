@@ -28,7 +28,7 @@ function useProviders() {
 }
 
 function ServiceRow({ provider, service }) {
-  const { t } = useT();
+  const { t, token } = useT();
   const [expanded, setExpanded] = React.useState(false);
   const panelId = `service-detail-${provider.agentId}-${service.serviceId}`.replace(
     /[^a-zA-Z0-9_-]/g,
@@ -64,7 +64,7 @@ function ServiceRow({ provider, service }) {
           <span className='market-service-price-label'>
             {metered ? t('maxPerCall') : t('pricePerCall')}
           </span>
-          <strong>{amount == null ? '—' : amount}</strong> <span>USDT / {t('perCall')}</span>
+          <strong>{amount == null ? '—' : amount}</strong> <span>{token} / {t('perCall')}</span>
         </span>
         <span className='market-service-action'>{expanded ? t('collapseDetails') : t('expandDetails')}</span>
       </button>
