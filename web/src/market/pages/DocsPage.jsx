@@ -102,7 +102,7 @@ function CodeBlock({ children, label }) {
 }
 
 export default function DocsPage() {
-  const { t } = useT();
+  const { t, token } = useT();
   const { model, prompt } = useDocsData();
   const mcpConfig = {
     mcpServers: {
@@ -217,7 +217,7 @@ export default function DocsPage() {
           ].map(([label, amount]) => (
             <div className='docs-limit' key={label}>
               <span>{t(label)}</span>
-              <strong>{amount == null ? '—' : `${amount} USDT`}</strong>
+              <strong>{amount == null ? '—' : `${amount} ${token}`}</strong>
             </div>
           ))}
         </div>

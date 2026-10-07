@@ -136,8 +136,9 @@ export async function main(
 
   log(`wallet ${wallet}`);
   const userBudget = summary.userBudget as { effective: string; source: string } | null;
+  const symbol = (summary.asset as { symbol?: string } | undefined)?.symbol ?? 'USDT';
   if (userBudget) {
-    log(`effective ${formatUsdt(BigInt(userBudget.effective))} USDT (source ${userBudget.source})`);
+    log(`effective ${formatUsdt(BigInt(userBudget.effective))} ${symbol} (source ${userBudget.source})`);
   } else {
     log('effective none (no daily budget)');
   }

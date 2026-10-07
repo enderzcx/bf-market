@@ -91,6 +91,7 @@ export function createBudgetService(opts: {
   const config = opts.config;
   const now = opts.now ?? store.now ?? Date.now;
   const chainId = config.chain.chainId;
+  const symbol = config.network.asset.symbol;
 
   const parseScope = (value: unknown): BudgetScope => {
     if (typeof value !== 'string' || !(BUDGET_SCOPES as readonly string[]).includes(value)) {
@@ -114,7 +115,7 @@ export function createBudgetService(opts: {
     const limit = BigInt(value);
     const max = budgetMax(config);
     if (limit > max) {
-      throw new ServiceError(400, `The daily budget cannot exceed ${formatUsdt(max)} USDT.`);
+      throw new ServiceError(400, `The daily budget cannot exceed ${formatUsdt(max)} ${symbol}.`);
     }
     return limit;
   };
@@ -172,7 +173,7 @@ export function createBudgetService(opts: {
         `Scope: ${scope === 'ceiling' ? `owner ceiling for agent #${agentId}` : "wallet's own budget"}`,
         `Wallet: ${wallet}`,
         `Daily budget: ${
-          dailyLimit === null ? 'removed' : `${formatUsdt(dailyLimit)} USDT (${dailyLimit})`
+          dailyLimit === null ? 'removed' : `${formatUsdt(dailyLimit)} ${symbol} (${dailyLimit})`
         }`,
       ],
     });
@@ -293,7 +294,7 @@ export function createBudgetService(opts: {
           if (dailyLimit > ceiling) {
             throw new ServiceError(
               400,
-              `The daily budget exceeds the owner's limit of ${formatUsdt(ceiling)} USDT.`,
+              `The daily budget exceeds the owner's limit of ${formatUsdt(ceiling)} ${symbol}.`,
             );
           }
         }

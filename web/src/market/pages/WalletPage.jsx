@@ -193,6 +193,7 @@ function receiptStatusKey(status) {
 }
 
 function WalletReceiptTable({ receipts, lang, t, explorerUrl: explorerBase }) {
+  const { token } = useT();
   if (receipts.length === 0) {
     return <p className='wallet-empty-receipts market-prose'>{t('walletReceiptEmpty')}</p>;
   }
@@ -225,7 +226,7 @@ function WalletReceiptTable({ receipts, lang, t, explorerUrl: explorerBase }) {
               <tr key={receipt.paymentKey}>
                 <td className='wallet-receipt-time'>{formatTime(receipt.createdAt, lang)}</td>
                 <td className='wallet-receipt-service'>{receipt.serviceId || '—'}</td>
-                <td>{charged == null ? '—' : `${charged} USDT`}</td>
+                <td>{charged == null ? '—' : `${charged} ${token}`}</td>
                 <td>{t(receiptStatusKey(receipt.status))}</td>
                 <td>
                   {explorerUrl ? (
@@ -377,7 +378,7 @@ function BudgetControl({
 }
 
 function OwnerConsole({ account, session, refreshNonce, onChanged }) {
-  const { t, translateError } = useT();
+  const { t, token, translateError } = useT();
   const storeRef = React.useRef(null);
   if (!storeRef.current) storeRef.current = createOwnerConsoleStore();
   const store = storeRef.current;
@@ -473,29 +474,29 @@ function OwnerConsole({ account, session, refreshNonce, onChanged }) {
           <div>
             <span>{t('walletCharged')}</span>
             <strong>
-              {wallet.spentToday ?? '—'} <small>USDT</small>
+              {wallet.spentToday ?? '—'} <small>{token}</small>
             </strong>
           </div>
           <div>
             <span>{t('walletPending')}</span>
             <strong>
-              {wallet.pendingToday ?? '—'} <small>USDT</small>
+              {wallet.pendingToday ?? '—'} <small>{token}</small>
             </strong>
           </div>
         </div>
         {wallet.budget && (
           <div className='wallet-budget-details'>
             <span>
-              {t('walletEffectiveBudget')}: {wallet.budget.effective} USDT
+              {t('walletEffectiveBudget')}: {wallet.budget.effective} {token}
             </span>
             {wallet.budget.ceiling != null && (
               <span>
-                {t('walletOwnerCeiling')}: {wallet.budget.ceiling} USDT
+                {t('walletOwnerCeiling')}: {wallet.budget.ceiling} {token}
               </span>
             )}
             {wallet.budget.own != null && (
               <span>
-                {t('walletOwnBudget')}: {wallet.budget.own} USDT
+                {t('walletOwnBudget')}: {wallet.budget.own} {token}
               </span>
             )}
           </div>
@@ -636,7 +637,7 @@ function OwnerConsole({ account, session, refreshNonce, onChanged }) {
               <li key={entry.agentId}>
                 <span>{t('agentNumber', { id: entry.agentId })}</span>
                 <span>
-                  {t('walletColumnCeiling')}: {entry.ceiling == null ? t('walletTransferredNoCeiling') : `${entry.ceiling} USDT`}
+                  {t('walletColumnCeiling')}: {entry.ceiling == null ? t('walletTransferredNoCeiling') : `${entry.ceiling} ${token}`}
                 </span>
               </li>
             ))}
@@ -657,7 +658,7 @@ function OwnerConsole({ account, session, refreshNonce, onChanged }) {
 }
 
 function WalletSummaryBody({ address, refreshNonce, account, session }) {
-  const { lang, t } = useT();
+  const { lang, t, token } = useT();
   const [summary, setSummary] = React.useState(null);
   const [services, setServices] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -730,11 +731,11 @@ function WalletSummaryBody({ address, refreshNonce, account, session }) {
         <div className='wallet-spend-metrics'>
           <div>
             <span>{t('walletCharged')}</span>
-            <strong>{view.todayCharged} <small>USDT</small></strong>
+            <strong>{view.todayCharged} <small>{token}</small></strong>
           </div>
           <div>
             <span>{t('walletPending')}</span>
-            <strong>{view.todayPending} <small>USDT</small></strong>
+            <strong>{view.todayPending} <small>{token}</small></strong>
           </div>
         </div>
       </section>
@@ -744,7 +745,7 @@ function WalletSummaryBody({ address, refreshNonce, account, session }) {
         {view.budget ? (
           <>
             <div className='wallet-budget-main'>
-              <strong>{view.budget.effective} <small>USDT</small></strong>
+              <strong>{view.budget.effective} <small>{token}</small></strong>
               <span>
                 {t('walletBudgetSource')}: {t(
                   view.budget.source === 'ceiling'
@@ -757,10 +758,10 @@ function WalletSummaryBody({ address, refreshNonce, account, session }) {
             </div>
             <div className='wallet-budget-details'>
               {view.budget.ceiling != null && (
-                <span>{t('walletOwnerCeiling')}: {view.budget.ceiling} USDT</span>
+                <span>{t('walletOwnerCeiling')}: {view.budget.ceiling} {token}</span>
               )}
               {view.budget.own != null && (
-                <span>{t('walletOwnBudget')}: {view.budget.own} USDT</span>
+                <span>{t('walletOwnBudget')}: {view.budget.own} {token}</span>
               )}
             </div>
             {view.budget.ownIsCapped && (
@@ -798,15 +799,15 @@ function WalletSummaryBody({ address, refreshNonce, account, session }) {
         <div className='wallet-llm-metrics'>
           <div>
             <span>{t('walletLlmUsed')}</span>
-            <strong>{view.llmUsed} <small>/ {view.llmCap} USDT</small></strong>
+            <strong>{view.llmUsed} <small>/ {view.llmCap} {token}</small></strong>
           </div>
           <div>
             <span>{t('walletLlmRemaining')}</span>
-            <strong>{view.llmRemaining} <small>USDT</small></strong>
+            <strong>{view.llmRemaining} <small>{token}</small></strong>
           </div>
           <div>
             <span>{t('walletLlmGlobal')}</span>
-            <strong>{view.llmGlobalRemaining} <small>/ {view.llmGlobalCap} USDT</small></strong>
+            <strong>{view.llmGlobalRemaining} <small>/ {view.llmGlobalCap} {token}</small></strong>
           </div>
         </div>
       </section>
@@ -822,7 +823,7 @@ function WalletSummaryBody({ address, refreshNonce, account, session }) {
               </div>
               <div className='wallet-service-quote'>
                 <span>{service.pricing === 'metered' ? t('walletMaxPerCall') : t('walletFixedPerCall')}</span>
-                <strong>{service.quote ?? '—'} USDT</strong>
+                <strong>{service.quote ?? '—'} {token}</strong>
               </div>
               <span className={service.canCallToday ? 'wallet-callable' : 'wallet-not-callable'}>
                 {t(service.canCallToday ? 'walletCallable' : 'walletNotCallable')}

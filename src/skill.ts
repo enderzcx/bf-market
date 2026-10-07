@@ -38,26 +38,26 @@ function priceCapOf(definition: ServiceDefinition): bigint {
     : definition.price;
 }
 
-function serviceRow(definition: ServiceDefinition): string {
+function serviceRow(definition: ServiceDefinition, symbol: string): string {
   const cap = formatUsdt(priceCapOf(definition));
   if (definition.pricing.mode === 'metered') {
     const pricing = definition.pricing.pricing;
     return [
-      `| \`${definition.serviceId}\` | ${pricing.modelId} | metered (x402 \`upto\`) | ${cap} USDT |`,
+      `| \`${definition.serviceId}\` | ${pricing.modelId} | metered (x402 \`upto\`) | ${cap} ${symbol} |`,
       ` total input <= ${LLM_MAX_CONTENT_CHARS} chars; max_tokens <= ${LLM_MAX_MAX_TOKENS} (default ${LLM_DEFAULT_MAX_TOKENS}) |`,
       ` fixed quote up to ${LLM_QUOTE_OUTPUT_TOKENS} completion tokens |`,
       ` input $${usd(pricing.inputMicroUsdPerMillion)} / 1M tokens, output $${usd(pricing.outputMicroUsdPerMillion)} / 1M tokens |`,
     ].join('');
   }
   return [
-    `| \`${definition.serviceId}\` | - | exact | ${cap} USDT |`,
+    `| \`${definition.serviceId}\` | - | exact | ${cap} ${symbol} |`,
     ' any JSON object, up to 16 KB | the request body echoed back |',
     ' fixed price |',
   ].join('');
 }
 
-function serviceTable(catalog: ServiceCatalog): string {
-  const rows = catalog.available().map(({ definition }) => serviceRow(definition));
+function serviceTable(catalog: ServiceCatalog, symbol: string): string {
+  const rows = catalog.available().map(({ definition }) => serviceRow(definition, symbol));
   if (rows.length === 0) {
     return 'No service is listed right now. Check the live catalog at `/discovery/resources`.';
   }
@@ -278,9 +278,9 @@ Quote per call for a metered service: \`ceil(${LLM_QUOTE_INPUT_TOKENS} input tok
 
 Video services (ids starting with \`video-\`) watch a video for you. Their body is \`{"video_url","prompt","max_tokens"?}\` instead of chat messages: \`video_url\` is a public https link to an mp4, mov or webm file of at most 20 MB, and the quote allows 64000 input tokens because video is token-heavy. If the server cannot fetch the video, nothing is charged.
 
-Daily LLM limits, read from config, apply to LLM (metered) services only: at most ${payerDaily} USDT per wallet and ${globalDaily} USDT platform-wide per UTC day, counting metered spend only. Hitting either returns \`429\` with \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\`, and nothing is settled. \`echo\` is a fixed-price service and has no platform daily limit.
+Daily LLM limits, read from config, apply to LLM (metered) services only: at most ${payerDaily} ${asset.symbol} per wallet and ${globalDaily} ${asset.symbol} platform-wide per UTC day, counting metered spend only. Hitting either returns \`429\` with \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\`, and nothing is settled. \`echo\` is a fixed-price service and has no platform daily limit.
 
-${serviceTable(catalog)}
+${serviceTable(catalog, asset.symbol)}
 
 ## 7. Daily budget
 
@@ -289,11 +289,11 @@ A payment wallet can carry a daily budget that applies to every paid service, in
 - the owner's ceiling: a per-agent limit set by the ERC-8004 owner, applied to that agent's payment wallet;
 - the wallet's own value: a limit the payment wallet sets for itself.
 
-When neither is set there is no user budget: \`echo\` then has no daily limit and the LLM services are bounded only by the platform limits in section 6. A value of \`0\` pauses every paid call for that wallet. Every user value is at most ${budgetCeiling} USDT.
+When neither is set there is no user budget: \`echo\` then has no daily limit and the LLM services are bounded only by the platform limits in section 6. A value of \`0\` pauses every paid call for that wallet. Every user value is at most ${budgetCeiling} ${asset.symbol}.
 
 Rules:
 
-- The payment wallet may only set a value at or below the owner's ceiling. A larger value is rejected with \`The daily budget exceeds the owner's limit of <amount> USDT.\`
+- The payment wallet may only set a value at or below the owner's ceiling. A larger value is rejected with \`The daily budget exceeds the owner's limit of <amount> ${asset.symbol}.\`
 - Lowering the ceiling does not overwrite the wallet's stored value; the effective budget just drops to the ceiling until the ceiling is raised or removed.
 - Calls are admitted against the quoted maximum per call, so a model whose fixed quote is above the remaining budget cannot be called today while a cheaper model still can. After settlement only the actual usage counts.
 - The budget changes apply immediately; a hold already taken by an in-flight call keeps its amount.
@@ -313,7 +313,7 @@ A rejected budget change returns an English error with the reason, for example \
 
 - \`PAYMENT-SIGNATURE header is required\` - send the signed payment in the \`PAYMENT-SIGNATURE\` header.
 - \`Buyer has not approved Permit2, or the allowance is too low.\` - send the one-time Permit2 approve for ${asset.symbol} first.
-- \`Buyer has insufficient USDT balance.\` - top up the buyer wallet with testnet ${asset.symbol}.
+- \`Buyer has insufficient ${asset.symbol} balance.\` - top up the buyer wallet with testnet ${asset.symbol}.
 - \`Payment authorization has expired. Sign a new payment.\` - the signed deadline passed; sign a fresh payload.
 - \`Payment authorization was already used.\` or \`This payment was already used for another service.\` - every signature settles once; sign a new one for a new call.
 - \`Settlement amount exceeds the signed upper bound.\` - you signed below the quote; sign the exact amount from the 402.
