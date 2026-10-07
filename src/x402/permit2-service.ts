@@ -344,14 +344,30 @@ export function createPermit2Service(opts: {
     upstream_request_id: upstreamRequestId,
   });
 
-  const assertDailyLimits = (payer: Address, upperBound: bigint): void => {
-    const day = utcDay();
-    if (opts.store.llmSpendFor(day, payer) + upperBound > opts.config.llmPayerDailyCapAtomic) {
-      throw new ServiceError(429, 'Daily spending limit reached for this payer.');
+  // Ledger bookkeeping for the paid path. The hold is taken right after the
+  // signature is verified and before the payment row is written, so a rejected
+  // request consumes no signature, settles nothing and leaves no receipt; a
+  // retry reuses the row it already owns. A payment that was already
+  // mid-settlement when the ledger shipped has no row and settles without
+  // bookkeeping rather than failing.
+  const holdSpendFor = (
+    paymentKey: string,
+    payer: Address,
+    serviceId: string,
+    scheme: 'exact' | 'upto',
+    amount: bigint,
+  ): void => {
+    opts.store.holdSpend({ paymentKey, day: utcDay(), payer, serviceId, scheme, amount });
+  };
+  const settleSpend = (paymentKey: string, amount: bigint): void => {
+    const row = opts.store.getSpend(paymentKey);
+    if (row?.state === 'held' || row?.state === 'charged') {
+      opts.store.chargeSpend(paymentKey, amount);
     }
-    if (opts.store.llmSpendTotal(day) + upperBound > opts.config.llmGlobalDailyCapAtomic) {
-      throw new ServiceError(429, 'The daily model budget is exhausted.');
-    }
+  };
+  const releaseHold = (paymentKey: string): void => {
+    const row = opts.store.getSpend(paymentKey);
+    if (row?.state === 'held') opts.store.releaseSpend(paymentKey);
   };
 
   const callLlmOnce = async (input: {
@@ -429,6 +445,10 @@ export function createPermit2Service(opts: {
           }
           throw err;
         }
+        // Reserve the price before the payment row is written and before
+        // anything is prepared or broadcast: a rejected request consumes no
+        // signature, settles nothing and leaves no receipt behind.
+        holdSpendFor(paymentKey, verified.payer, input.serviceId, 'exact', BigInt(requirements.amount));
         if (!record) {
           record = opts.store.upsertServicePayment({
             paymentKey,
@@ -444,6 +464,10 @@ export function createPermit2Service(opts: {
         if (record.status === 'required') {
           record = opts.store.setServicePaymentStatus(paymentKey, 'verified');
         }
+      } else if (record.status === 'verified') {
+        // A retry that already verified (a transient prepare failure) keeps or
+        // re-acquires the row it owns.
+        holdSpendFor(paymentKey, record.payer, input.serviceId, 'exact', BigInt(requirements.amount));
       }
 
       if (record.status === 'verified') {
@@ -473,7 +497,9 @@ export function createPermit2Service(opts: {
             txHash: inspected.txHash,
             error: null,
           });
+          settleSpend(paymentKey, BigInt(record.amount));
         } else if (inspected.reason === 'reverted') {
+          releaseHold(paymentKey);
           opts.store.setServicePaymentStatus(paymentKey, 'failed', {
             error: 'Payment settlement failed.',
           });
@@ -485,6 +511,7 @@ export function createPermit2Service(opts: {
             transport: input.transport,
           });
         } else if (inspected.reason === 'mismatch') {
+          releaseHold(paymentKey);
           opts.store.setServicePaymentStatus(paymentKey, 'failed', {
             error: 'Settlement receipt does not match the requirements.',
           });
@@ -494,6 +521,7 @@ export function createPermit2Service(opts: {
             headers: {},
           };
         } else {
+          // Still confirming: keep the hold reserved for the day.
           return {
             status: 202,
             body: { status: 'settling', txHash: record.txHash },
@@ -647,6 +675,12 @@ export function createPermit2Service(opts: {
           if (err instanceof ServiceError && err.status === 402) return offer(err.message);
           throw err;
         }
+        // The user budget and the metered platform caps are enforced by the hold.
+        // The quote's upper bound is what has to fit (a model whose quote exceeds
+        // the remaining budget cannot be called); settlement shrinks the hold to
+        // the actual usage. The hold is taken before the payment row is written,
+        // so a rejected request consumes no signature and leaves no receipt.
+        holdSpendFor(paymentKey, verified.payer, input.serviceId, 'upto', upperBound);
         if (!record) {
           record = opts.store.upsertServicePayment({
             paymentKey,
@@ -681,8 +715,6 @@ export function createPermit2Service(opts: {
         throw err;
       }
 
-      // Per-payer and global daily caps are enforced before the upstream call.
-      const day = utcDay();
       const paymentKeyRef = paymentKey;
 
       // Call the model, then settle the actual usage.
@@ -690,13 +722,13 @@ export function createPermit2Service(opts: {
         ? (JSON.parse(record.usageJson) as LlmUsage)
         : null;
       if (!usage) {
-        assertDailyLimits(record.payer, upperBound);
         // Call upstream exactly once per payload; a failed call leaves the
         // signature unconsumed and settles nothing.
         let call: Awaited<ReturnType<typeof callLlmOnce>>;
         try {
           call = await callLlmOnce({ pricing, request, payer: record.payer });
         } catch (err) {
+          releaseHold(paymentKeyRef);
           opts.store.setServicePaymentStatus(paymentKeyRef, 'failed', {
             error: 'The model provider call failed.',
             consumed: false,
@@ -712,14 +744,14 @@ export function createPermit2Service(opts: {
           actual,
           call.upstreamRequestId,
         );
-        // Persist usage, charge and the delivered payload together so a crash
-        // before settle can resume without calling the model again.
-        record = opts.store.setServicePaymentStatus(paymentKeyRef, 'verified', {
-          chargedAmount: actual.toString(),
+        // Persist usage, charge and the delivered payload together, and shrink
+        // the hold in the same transaction, so a crash before settle can resume
+        // without calling the model again.
+        record = opts.store.recordMeteredUsage(paymentKeyRef, {
+          chargedAmount: actual,
           usageJson: JSON.stringify(usage),
           upstreamRequestId: call.upstreamRequestId,
           resultJson: JSON.stringify(output),
-          error: null,
         });
       }
 
@@ -727,8 +759,10 @@ export function createPermit2Service(opts: {
       const output = JSON.parse(record.resultJson ?? 'null') as unknown;
 
       if (charged === 0n) {
-        // Nothing to transfer: mark the payload consumed so the same signature
-        // can never be settled later, and skip the on-chain transaction.
+        // Nothing to transfer: give the budget back, mark the payload consumed
+        // so the same signature can never be settled later, and skip the
+        // on-chain transaction.
+        releaseHold(paymentKeyRef);
         const delivered = opts.store.markServicePaymentDelivered(
           paymentKeyRef,
           JSON.stringify(output),
@@ -767,7 +801,7 @@ export function createPermit2Service(opts: {
         proxy: uptoProxy,
       });
       if (inspected.ok) {
-        opts.store.addLlmSpend(day, record.payer, charged);
+        settleSpend(paymentKeyRef, charged);
         const delivered = opts.store.markServicePaymentDelivered(
           paymentKeyRef,
           JSON.stringify(output),
@@ -780,6 +814,7 @@ export function createPermit2Service(opts: {
         };
       }
       if (inspected.reason === 'reverted') {
+        releaseHold(paymentKeyRef);
         opts.store.setServicePaymentStatus(paymentKeyRef, 'failed', {
           error: 'Payment settlement failed.',
           consumed: false,
@@ -787,6 +822,7 @@ export function createPermit2Service(opts: {
         return offer('Payment settlement failed.');
       }
       if (inspected.reason === 'mismatch') {
+        releaseHold(paymentKeyRef);
         opts.store.setServicePaymentStatus(paymentKeyRef, 'failed', {
           error: 'Settlement receipt does not match the requirements.',
           consumed: false,
@@ -797,6 +833,8 @@ export function createPermit2Service(opts: {
           headers: {},
         };
       }
+      // Still confirming: keep the actual charge held, and let the retry settle
+      // it without calling the model again.
       return {
         status: 202,
         body: { status: 'settling', txHash: record.txHash },

@@ -8,10 +8,10 @@ import {
   x402HTTPClient,
 } from '@x402/core/http';
 import type { PaymentRequired } from '@x402/core/types';
-import { PERMIT2_ADDRESS, uptoPermit2WitnessTypes } from '@x402/evm';
+import { PERMIT2_ADDRESS } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { UptoEvmScheme } from '@x402/evm/upto/client';
-import { permit2PaymentKey, UPTO_PERMIT2_PROXY } from '../src/x402/index.ts';
+import { permit2PaymentKey } from '../src/x402/index.ts';
 import type { X402PaymentRequirements } from '../src/x402/types.ts';
 import {
   AGENT_KEY,
@@ -21,6 +21,7 @@ import {
   buildApp,
   closeAll,
   createMcpClient,
+  manualUptoPayload,
   mintUsdt,
   registerProvider,
   req,
@@ -140,73 +141,6 @@ async function fetchOffer(app: ReturnType<typeof buildApp>['app'], body: Record<
   };
   const upto = required.accepts.find((a) => a.scheme === 'upto')!;
   return { res, required, upto };
-}
-
-// Manual upto payload so negative cases can tweak one field at a time.
-async function manualUptoPayload(input: {
-  requirement: X402PaymentRequirements;
-  account: ReturnType<typeof privateKeyToAccount>;
-  chainId: number;
-  amount?: string;
-  payTo?: Address;
-  facilitator?: Address;
-  spender?: Address;
-  deadline?: string;
-  validAfter?: string;
-  nonce?: string;
-  signWith?: ReturnType<typeof privateKeyToAccount>;
-}) {
-  const now = Math.floor(Date.now() / 1000);
-  const nonce =
-    input.nonce ??
-    BigInt(
-      `0x${crypto.randomUUID().replaceAll('-', '')}${crypto.randomUUID().replaceAll('-', '')}`,
-    ).toString();
-  const auth = {
-    from: getAddress(input.account.address),
-    permitted: {
-      token: getAddress(input.requirement.asset),
-      amount: input.amount ?? input.requirement.amount,
-    },
-    spender: getAddress(input.spender ?? UPTO_PERMIT2_PROXY),
-    nonce,
-    deadline: input.deadline ?? String(now + input.requirement.maxTimeoutSeconds),
-    witness: {
-      to: getAddress(input.payTo ?? input.requirement.payTo),
-      facilitator: getAddress(
-        input.facilitator ?? (input.requirement.extra.facilitatorAddress as string),
-      ),
-      validAfter: input.validAfter ?? '0',
-    },
-  };
-  const signer = input.signWith ?? input.account;
-  const signature = await signer.signTypedData({
-    domain: { name: 'Permit2', chainId: input.chainId, verifyingContract: getAddress(PERMIT2_ADDRESS) },
-    types: uptoPermit2WitnessTypes,
-    primaryType: 'PermitWitnessTransferFrom',
-    message: {
-      permitted: { token: getAddress(auth.permitted.token), amount: BigInt(auth.permitted.amount) },
-      spender: getAddress(auth.spender),
-      nonce: BigInt(auth.nonce),
-      deadline: BigInt(auth.deadline),
-      witness: {
-        to: getAddress(auth.witness.to),
-        facilitator: getAddress(auth.witness.facilitator),
-        validAfter: BigInt(auth.witness.validAfter),
-      },
-    },
-  });
-  const payload = {
-    x402Version: 2,
-    accepted: { ...input.requirement },
-    payload: { signature, permit2Authorization: auth },
-  };
-  return {
-    payload,
-    header: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
-    nonce,
-    payer: getAddress(input.account.address),
-  };
 }
 
 async function approvePermit2(

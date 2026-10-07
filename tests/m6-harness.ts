@@ -18,7 +18,7 @@ import {
   type PublicClient,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { PERMIT2_ADDRESS, permit2WitnessTypes } from '@x402/evm';
+import { PERMIT2_ADDRESS, permit2WitnessTypes, uptoPermit2WitnessTypes } from '@x402/evm';
 import { compileErc8004, deploymentSteps } from '../scripts/erc8004-artifacts.ts';
 import {
   createRpcAgentRegistryChain,
@@ -464,6 +464,74 @@ export async function manualPayload(input: {
       nonce: BigInt(auth.nonce),
       deadline: BigInt(auth.deadline),
       witness: { to: getAddress(auth.witness.to), validAfter: BigInt(auth.witness.validAfter) },
+    },
+  });
+  const payload = {
+    x402Version: 2,
+    accepted: { ...input.requirement },
+    payload: { signature, permit2Authorization: auth },
+  };
+  return {
+    payload,
+    header: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
+    nonce,
+    payer: getAddress(input.account.address),
+  };
+}
+
+// Manual upto (metered) payload so tests can reuse one signed authorization, and
+// tweak a single field for the negative cases.
+export async function manualUptoPayload(input: {
+  requirement: X402PaymentRequirements;
+  account: ReturnType<typeof privateKeyToAccount>;
+  chainId: number;
+  amount?: string;
+  payTo?: Address;
+  facilitator?: Address;
+  spender?: Address;
+  deadline?: string;
+  validAfter?: string;
+  nonce?: string;
+  signWith?: ReturnType<typeof privateKeyToAccount>;
+}) {
+  const now = Math.floor(Date.now() / 1000);
+  const nonce =
+    input.nonce ??
+    BigInt(
+      `0x${crypto.randomUUID().replaceAll('-', '')}${crypto.randomUUID().replaceAll('-', '')}`,
+    ).toString();
+  const auth = {
+    from: getAddress(input.account.address),
+    permitted: {
+      token: getAddress(input.requirement.asset),
+      amount: input.amount ?? input.requirement.amount,
+    },
+    spender: getAddress(input.spender ?? UPTO_PERMIT2_PROXY),
+    nonce,
+    deadline: input.deadline ?? String(now + input.requirement.maxTimeoutSeconds),
+    witness: {
+      to: getAddress(input.payTo ?? input.requirement.payTo),
+      facilitator: getAddress(
+        input.facilitator ?? (input.requirement.extra.facilitatorAddress as string),
+      ),
+      validAfter: input.validAfter ?? '0',
+    },
+  };
+  const signer = input.signWith ?? input.account;
+  const signature = await signer.signTypedData({
+    domain: { name: 'Permit2', chainId: input.chainId, verifyingContract: getAddress(PERMIT2_ADDRESS) },
+    types: uptoPermit2WitnessTypes,
+    primaryType: 'PermitWitnessTransferFrom',
+    message: {
+      permitted: { token: getAddress(auth.permitted.token), amount: BigInt(auth.permitted.amount) },
+      spender: getAddress(auth.spender),
+      nonce: BigInt(auth.nonce),
+      deadline: BigInt(auth.deadline),
+      witness: {
+        to: getAddress(auth.witness.to),
+        facilitator: getAddress(auth.witness.facilitator),
+        validAfter: BigInt(auth.witness.validAfter),
+      },
     },
   });
   const payload = {

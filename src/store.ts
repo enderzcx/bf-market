@@ -734,6 +734,68 @@ export function createStore(opts: {
     return getPayoutBySource(item.sourceId)!;
   };
 
+  // Row-level writers shared by the public mutations and the one-shot seed
+  // import. They never open their own transaction, so a caller can wrap several
+  // of them in one.
+  const applyServicePaymentStatus = (
+    paymentKey: string,
+    status: ServicePaymentStatus,
+    extra?: {
+      txHash?: Hex | null;
+      journal?: Hex | null;
+      error?: string | null;
+      consumed?: boolean;
+      chargedAmount?: string | null;
+      usageJson?: string | null;
+      upstreamRequestId?: string | null;
+      resultJson?: string | null;
+    },
+  ): ServicePaymentRecord => {
+    const result = db.run(
+      `UPDATE service_payments SET
+         status = ?,
+         tx_hash = COALESCE(?, tx_hash),
+         journal = COALESCE(?, journal),
+         error = ?,
+         charged_amount = COALESCE(?, charged_amount),
+         consumed = COALESCE(?, consumed),
+         usage_json = COALESCE(?, usage_json),
+         upstream_request_id = COALESCE(?, upstream_request_id),
+         result_json = COALESCE(?, result_json),
+         updated_at = ?
+       WHERE payment_key = ?`,
+      [
+        status,
+        extra?.txHash ?? null,
+        extra?.journal ?? null,
+        extra?.error ?? null,
+        extra?.chargedAmount ?? null,
+        extra?.consumed === undefined ? null : extra.consumed ? 1 : 0,
+        extra?.usageJson ?? null,
+        extra?.upstreamRequestId ?? null,
+        extra?.resultJson ?? null,
+        now(),
+        paymentKey,
+      ],
+    );
+    if (result.changes !== 1) {
+      throw new ServiceError(409, "The service payment is in an unexpected state.");
+    }
+    return getServicePayment(paymentKey)!;
+  };
+
+  const applySpendAmount = (paymentKey: string, amount: bigint, at?: number): SpendRecord => {
+    const result = db.run(
+      `UPDATE wallet_spend SET amount = ?, updated_at = ?
+       WHERE payment_key = ? AND state = 'held'`,
+      [amount.toString(), at ?? now(), paymentKey],
+    );
+    if (result.changes !== 1) {
+      throw new ServiceError(409, "The spend hold is in an unexpected state.");
+    }
+    return getSpendRow(paymentKey)!;
+  };
+
   return {
     close() {
       db.close();
@@ -1709,37 +1771,7 @@ export function createStore(opts: {
         resultJson?: string | null;
       },
     ) {
-      const result = db.run(
-        `UPDATE service_payments SET
-           status = ?,
-           tx_hash = COALESCE(?, tx_hash),
-           journal = COALESCE(?, journal),
-           error = ?,
-           charged_amount = COALESCE(?, charged_amount),
-           consumed = COALESCE(?, consumed),
-           usage_json = COALESCE(?, usage_json),
-           upstream_request_id = COALESCE(?, upstream_request_id),
-           result_json = COALESCE(?, result_json),
-           updated_at = ?
-         WHERE payment_key = ?`,
-        [
-          status,
-          extra?.txHash ?? null,
-          extra?.journal ?? null,
-          extra?.error ?? null,
-          extra?.chargedAmount ?? null,
-          extra?.consumed === undefined ? null : extra.consumed ? 1 : 0,
-          extra?.usageJson ?? null,
-          extra?.upstreamRequestId ?? null,
-          extra?.resultJson ?? null,
-          now(),
-          paymentKey,
-        ],
-      );
-      if (result.changes !== 1) {
-        throw new ServiceError(409, "The service payment is in an unexpected state.");
-      }
-      return getServicePayment(paymentKey)!;
+      return tx(() => applyServicePaymentStatus(paymentKey, status, extra));
     },
     markServicePaymentDelivered(
       paymentKey: string,
@@ -1800,10 +1832,12 @@ export function createStore(opts: {
     },
     // ---- Daily budget ledger (architecture §1) ------------------------------
     // Hold the price (exact) or the quote upper bound (upto) for one payment
-    // authorization. Idempotent per paymentKey: a retry gets the row it already
-    // owns and does not re-check any limit. Otherwise the limits, the platform
-    // caps and the insert are decided inside one transaction with no `await`, so
-    // two concurrent calls from the same payer cannot both pass.
+    // authorization. A row that is already held or charged is finished business:
+    // a retry gets the row it already owns and no limit is evaluated again. A
+    // released row reserves nothing, so a retry re-acquires it under the limits
+    // that apply now. Otherwise the limits, the platform caps and the write are
+    // decided inside one transaction with no `await`, so two concurrent calls
+    // from the same payer cannot both pass.
     holdSpend(input: {
       paymentKey: string;
       day: string;
@@ -1820,7 +1854,7 @@ export function createStore(opts: {
       }
       return tx(() => {
         const existing = getSpendRow(input.paymentKey);
-        if (existing) return existing;
+        if (existing && existing.state !== "released") return existing;
         const at = input.createdAt ?? now();
         const totals = spendTotalsRow(payer, input.day);
         const used = totals.charged + totals.held;
@@ -1842,6 +1876,23 @@ export function createStore(opts: {
             throw new ServiceError(429, "The daily model budget is exhausted.");
           }
         }
+        if (existing) {
+          db.run(
+            `UPDATE wallet_spend
+             SET day = ?, payer = ?, service_id = ?, scheme = ?, state = 'held', amount = ?, updated_at = ?
+             WHERE payment_key = ?`,
+            [
+              input.day,
+              payer,
+              input.serviceId,
+              input.scheme,
+              amount.toString(),
+              at,
+              input.paymentKey,
+            ],
+          );
+          return getSpendRow(input.paymentKey)!;
+        }
         db.run(
           `INSERT INTO wallet_spend (payment_key, day, payer, service_id, scheme, state, amount, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, 'held', ?, ?, ?)`,
@@ -1862,16 +1913,32 @@ export function createStore(opts: {
     // Shrink a hold to the actual usage before settlement.
     adjustHold(paymentKey: string, amount: bigint, opts?: { at?: number }): SpendRecord {
       const next = requireLimit(amount);
+      return tx(() => applySpendAmount(paymentKey, next, opts?.at));
+    },
+    // The metered path records the usage and shrinks the hold in one
+    // transaction: the amount the ledger reserves and the amount the payment
+    // will settle are written together, so a crash cannot leave them
+    // disagreeing.
+    recordMeteredUsage(
+      paymentKey: string,
+      input: {
+        chargedAmount: bigint;
+        usageJson: string;
+        upstreamRequestId: string | null;
+        resultJson: string;
+      },
+      opts?: { at?: number },
+    ): ServicePaymentRecord {
+      const charged = requireLimit(input.chargedAmount);
       return tx(() => {
-        const result = db.run(
-          `UPDATE wallet_spend SET amount = ?, updated_at = ?
-           WHERE payment_key = ? AND state = 'held'`,
-          [next.toString(), opts?.at ?? now(), paymentKey],
-        );
-        if (result.changes !== 1) {
-          throw new ServiceError(409, "The spend hold is in an unexpected state.");
-        }
-        return getSpendRow(paymentKey)!;
+        applySpendAmount(paymentKey, charged, opts?.at);
+        return applyServicePaymentStatus(paymentKey, "verified", {
+          chargedAmount: charged.toString(),
+          usageJson: input.usageJson,
+          upstreamRequestId: input.upstreamRequestId,
+          resultJson: input.resultJson,
+          error: null,
+        });
       });
     },
     // Settle a hold at the actual charge. Repeating the same charge is allowed so
