@@ -269,10 +269,16 @@
       "englishPage": "same figures with English labels on /wallet/<W>?lang=en"
     },
     "screenshots": [
+      "docs/evidence/screenshots/live-home-zh-1440x900.png",
+      "docs/evidence/screenshots/live-market-zh-1440x900.png",
       "docs/evidence/screenshots/live-wallet-zh-1440x900.png",
-      "docs/evidence/screenshots/live-home-en-390x844.png"
+      "docs/evidence/screenshots/live-docs-zh-1440x900.png",
+      "docs/evidence/screenshots/live-home-en-390x844.png",
+      "docs/evidence/screenshots/live-market-en-390x844.png",
+      "docs/evidence/screenshots/live-wallet-en-390x844.png",
+      "docs/evidence/screenshots/live-docs-en-390x844.png"
     ],
-    "note": "screenshots kept for the two loads that carry the assertion's specific checks; the other 14 loads were inspected in the same run and logged (no overflow, no Avalanche/Fuji, correct lang/title, no console or page errors)"
+    "note": "the eight screenshots are the contract minimum (4 pages x zh at 1440, 4 pages x en at 390) from the live run on market.bflabs.app; the same run also loaded all 16 page/lang/viewport combinations with programmatic checks logged (no overflow, no Avalanche/Fuji, correct lang/title, no console or page errors)"
   },
   "restore": {
     "actions": [
@@ -314,7 +320,7 @@
     "privateKeysInFile": false,
     "apiKeysInFile": false,
     "seedOrBearerTokenInFile": false,
-    "grep": "a recursive search over this file for private-key, API-key, seed-token and bearer-token markers returns no match; the four 0x-prefixed 64-hex strings it contains are all on-chain transaction hashes, listed below (no key material was ever written here)",
+    "grep": "a recursive search over this file for private-key, API-key, seed-token and bearer-token markers returns no match; the four 0x-prefixed 64-hex strings it contains are all on-chain transaction hashes (the two settlement hashes listed below plus the two registration hashes recorded in the agents.ownerNotWallet section) (no key material was ever written here)",
     "transactionHashes": [
       "0x5b1c0b3c25dd3bbf2decffbfe39915e9b44db13cf025fb9ca9cdcc0d2ddce727",
       "0xa67d04097c9ece1a339c1ff60031ba7eb023308f7aff0dcb23fb51f6791f6077"
