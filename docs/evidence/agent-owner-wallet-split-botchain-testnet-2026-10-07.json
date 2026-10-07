@@ -1,0 +1,139 @@
+{
+  "milestone": "budget-auth",
+  "feature": "test-agent-owner-wallet-split",
+  "date": "2026-10-07",
+  "network": "botchain-testnet",
+  "chainId": 968,
+  "rpc": "https://rpc.bohr.life",
+  "identityRegistry": "0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607",
+  "usdt": "0x75edC9335175Fc0552D51D48439F229c10420fe3",
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "authorizedBy": "human:ender (testnet only, per mission boundaries)",
+  "wallets": {
+    "owner": {
+      "role": "buyer-demo",
+      "address": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "keyFile": ".secrets/botchain-testnet/buyer-demo.env"
+    },
+    "agentWallet": {
+      "role": "W (new payment wallet of #2)",
+      "address": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+      "keyFile": ".secrets/botchain-testnet/budget-agent.env (mode 600, git-ignored, never printed)"
+    }
+  },
+  "testAgent": {
+    "agentId": "2",
+    "role": "buyer",
+    "name": "Budget Split Buyer",
+    "description": "BF Market test agent whose owner and payment wallet differ",
+    "owner": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+    "agentWallet": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+    "draftId": "7276bfbf94505a79d72b8e5a09ef2bc7",
+    "agentUri": "http://127.0.0.1:4333/registrations/7276bfbf94505a79d72b8e5a09ef2bc7.json",
+    "registeredThrough": "scripts/agent-register-demo.ts --network botchain-testnet --send --url http://127.0.0.1:4333 (local Worker platform flow)",
+    "knownIssue": "agentURI points at the loopback local Worker, same as agent #0; the on-chain document is not publicly resolvable"
+  },
+  "transactions": [
+    {
+      "step": "register agent #2",
+      "tx": "0xecb9f2dfb44d26a55e95960846d14c9e98a6686d494771237398b957f011d39e",
+      "block": 25990862,
+      "gasUsed": 183936,
+      "gasPriceWei": "20000000000",
+      "feeTbot": "0.00367872",
+      "sender": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "status": "success"
+    },
+    {
+      "step": "setAgentWallet(#2 -> W) with W's EIP-712 consent",
+      "tx": "0xe80b52d2c152b6130032b91b7ac4dfbda1c7f769d885170ad9cecdef3571aab0",
+      "block": 25990877,
+      "gasUsed": 51450,
+      "gasPriceWei": "20000000000",
+      "feeTbot": "0.001029",
+      "sender": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada (owner)",
+      "signer": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c (new wallet, EIP-712 consent)",
+      "deadlineSecondsAhead": 300,
+      "status": "success"
+    },
+    {
+      "step": "fund W with 0.01 tBOT gas",
+      "tx": "0x053817ba0623bda35ac792a1448ae0ebead3b810cd149304fda316127405682d",
+      "block": 25990899,
+      "gasUsed": 21000,
+      "feeTbot": "0.00042",
+      "sender": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "status": "success"
+    },
+    {
+      "step": "fund W with 1.2 USDT",
+      "tx": "0x7639ebefac0c32adb88fd14ed2aabe2132b523282be9df8eb7f9bd3523deeca3",
+      "block": 25990902,
+      "gasUsed": 52152,
+      "feeTbot": "0.00104304",
+      "sender": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+      "status": "success"
+    },
+    {
+      "step": "W approves Permit2 for USDT",
+      "tx": "0x8d8be3521569101f9a6d34cf9e7e45f3677a9889d716eadcb0f3c7043f866b06",
+      "block": 25990914,
+      "gasUsed": 47249,
+      "feeTbot": "0.00094498",
+      "sender": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+      "status": "success"
+    }
+  ],
+  "readBack": {
+    "ownerOf(2)": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+    "getAgentWallet(2)": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+    "ownerDiffersFromWallet": true,
+    "W": {
+      "tBOT": "0.00905502",
+      "usdtAtomic": "1200000",
+      "permit2AllowanceAtomic": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+    },
+    "ownerBalancesAfter": {
+      "tBOT": "0.02852154",
+      "usdtAtomic": "5755670"
+    }
+  },
+  "platformReadBack": {
+    "refresh": {
+      "request": "POST http://127.0.0.1:4333/api/agents/2/refresh",
+      "agentWallet": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+      "refreshedAt": 1791352684568,
+      "secondRefreshWithin30s": "same refreshedAt (throttled, no second chain read)"
+    },
+    "ownersList": {
+      "request": "GET http://127.0.0.1:4333/api/owners/0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada/agents",
+      "agent2": {
+        "agentWallet": "0xeD0c5d27b51839FE943f2FB5789921d5120D427c",
+        "ceiling": null,
+        "own": null,
+        "effective": null,
+        "spentToday": "0",
+        "pendingToday": "0"
+      },
+      "transferredAway": []
+    },
+    "walletSummary": {
+      "request": "GET http://127.0.0.1:4333/api/wallets/0xeD0c5d27b51839FE943f2FB5789921d5120D427c/summary",
+      "agents": [{ "agentId": "2", "owner": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada", "verifiedAt": 1791352684568 }],
+      "userBudget": null,
+      "spent": { "all": { "charged": "0", "pending": "0" }, "llm": { "charged": "0", "pending": "0" } },
+      "remaining": { "userBudget": null, "llm": "5000000" }
+    }
+  },
+  "spend": {
+    "usdtAtomic": "1200000",
+    "tbot": "0.00711574 (owner gas 0.00617076 + W gas 0.00094498)",
+    "limits": "<= 1.3 USDT and <= 0.05 tBOT (mission boundary); within limits",
+    "gasEstimatedBeforeEachTx": true
+  },
+  "secretHygiene": {
+    "keyFileMode": "600",
+    "gitIgnored": true,
+    "keyValueInThisFile": false
+  }
+}

@@ -8,14 +8,15 @@ import {
   http,
   isAddress,
   parseAbi,
+  type PublicClient,
   type TransactionReceipt,
 } from 'viem';
 import { profileForChainId } from './network.ts';
 import type { Address, AgentProfile, AgentProfileService, Hex } from './types.ts';
 import { ServiceError } from './types.ts';
 
-// ERC-8004 IdentityRegistry surface used by the registration flow. Only the
-// register/read paths are needed; metadata writes stay out of M3.
+// ERC-8004 IdentityRegistry surface used by the registration flow, the owner
+// console reads and the owner-driven wallet rotation (EIP-712 consent).
 export const identityRegistryAbi = parseAbi([
   'function register(string agentURI) returns (uint256 agentId)',
   'function ownerOf(uint256 agentId) view returns (address)',
@@ -25,6 +26,9 @@ export const identityRegistryAbi = parseAbi([
   'function setAgentWallet(uint256 agentId, address newWallet, uint256 deadline, bytes signature)',
   'function unsetAgentWallet(uint256 agentId)',
   'function transferFrom(address from, address to, uint256 agentId)',
+  // IERC-5267 domain getter: the consent must be signed over the registry's own
+  // domain, never a copy hard-coded here.
+  'function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)',
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)',
 ]);
 
@@ -76,6 +80,111 @@ export function registerCalldata(agentURI: string): Hex {
     abi: identityRegistryAbi,
     functionName: 'register',
     args: [agentURI],
+  });
+}
+
+// --- setAgentWallet consent (ERC-8004 owner-driven wallet rotation) ---------
+//
+// The registry verifies an EIP-712 signature from the *new* wallet over
+// AgentWalletSet(agentId, newWallet, owner, deadline) and rejects a deadline
+// more than five minutes out. The domain is read from the contract itself, so
+// these helpers never assume the name or version.
+
+export const AGENT_WALLET_SET_DOMAIN_NAME = 'ERC8004IdentityRegistry';
+export const AGENT_WALLET_SET_DOMAIN_VERSION = '1';
+// MAX_DEADLINE_DELAY in contracts/erc8004/IdentityRegistryUpgradeable.sol.
+export const AGENT_WALLET_SET_MAX_DEADLINE_SECONDS = 300;
+
+export const agentWalletSetTypes = {
+  AgentWalletSet: [
+    { name: 'agentId', type: 'uint256' },
+    { name: 'newWallet', type: 'address' },
+    { name: 'owner', type: 'address' },
+    { name: 'deadline', type: 'uint256' },
+  ],
+} as const;
+
+export type AgentWalletSetDomain = {
+  name: string;
+  version: string;
+  chainId: number;
+  verifyingContract: Address;
+};
+
+export type AgentWalletSetConsent = {
+  agentId: bigint;
+  newWallet: Address;
+  owner: Address;
+  deadline: bigint;
+};
+
+export function agentWalletSetTypedData(input: {
+  domain: AgentWalletSetDomain;
+  consent: AgentWalletSetConsent;
+}) {
+  return {
+    domain: {
+      name: input.domain.name,
+      version: input.domain.version,
+      chainId: input.domain.chainId,
+      verifyingContract: getAddress(input.domain.verifyingContract),
+    },
+    types: agentWalletSetTypes,
+    primaryType: 'AgentWalletSet' as const,
+    message: {
+      agentId: input.consent.agentId,
+      newWallet: getAddress(input.consent.newWallet),
+      owner: getAddress(input.consent.owner),
+      deadline: input.consent.deadline,
+    },
+  };
+}
+
+// A deadline the contract accepts: at most five minutes past block time.
+export function agentWalletSetDeadline(
+  nowSeconds: bigint,
+  ttlSeconds: number = AGENT_WALLET_SET_MAX_DEADLINE_SECONDS,
+): bigint {
+  if (
+    !Number.isInteger(ttlSeconds) ||
+    ttlSeconds <= 0 ||
+    ttlSeconds > AGENT_WALLET_SET_MAX_DEADLINE_SECONDS
+  ) {
+    throw new Error(
+      `The setAgentWallet deadline must be 1 to ${AGENT_WALLET_SET_MAX_DEADLINE_SECONDS} seconds ahead.`,
+    );
+  }
+  return nowSeconds + BigInt(ttlSeconds);
+}
+
+export async function readAgentWalletSetDomain(
+  client: PublicClient,
+  registry: Address,
+): Promise<AgentWalletSetDomain> {
+  const result = (await client.readContract({
+    address: getAddress(registry),
+    abi: identityRegistryAbi,
+    functionName: 'eip712Domain',
+  })) as unknown as readonly [Hex, string, string, bigint, Address, Hex, readonly bigint[]];
+  const [, name, version, chainId, verifyingContract] = result;
+  if (!name || !version) {
+    throw new Error('The identity registry returned an empty EIP-712 domain.');
+  }
+  return {
+    name,
+    version,
+    chainId: Number(chainId),
+    verifyingContract: getAddress(verifyingContract),
+  };
+}
+
+export function setAgentWalletCalldata(
+  input: AgentWalletSetConsent & { signature: Hex },
+): Hex {
+  return encodeFunctionData({
+    abi: identityRegistryAbi,
+    functionName: 'setAgentWallet',
+    args: [input.agentId, getAddress(input.newWallet), input.deadline, input.signature],
   });
 }
 
