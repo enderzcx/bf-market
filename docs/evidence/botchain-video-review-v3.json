@@ -1,0 +1,23 @@
+{
+  "market": "https://market.bflabs.app",
+  "service": "https://market.bflabs.app/api/services/video-gemini-3-8-flash/call",
+  "network": "eip155:968",
+  "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+  "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+  "asset": "0x75edC9335175Fc0552D51D48439F229c10420fe3",
+  "quoteMaxAtomic": "38600",
+  "video": "https://market.bflabs.app/demo/pelican-neon-ride-v3.mp4",
+  "prompt": "You are the reviewer for a 20-second animated short. The editor who made it cannot watch video, so be concrete.\nIntended beats: a pelican rides a bicycle along a neon synthwave seafront; around 0:07 a fish leaps out of the sea into its throat pouch while a FISH.EXE billboard fills to 100%; around 0:12 it hops over a traffic cone; around 0:17 it brakes to a stop and sunglasses drop onto its face.\n1) List what actually happens with mm:ss timestamps.\n2) For each intended beat, say whether it reads clearly, and if not, why.\n3) List the visual problems an editor should fix, most severe first, each with a timestamp and a concrete fix.\nKeep it under 350 words.",
+  "httpStatus": 200,
+  "elapsedMs": 25017,
+  "model": "gemini-3.8-flash",
+  "usage": {
+    "prompt_tokens": 1495,
+    "completion_tokens": 632,
+    "total_tokens": 2127
+  },
+  "chargedAtomic": "2644",
+  "permit2ApproveTx": null,
+  "settleTx": "0xf2ea8a2764ddebeec9db910b1c488463477b593ca6bdbb2aa5d0b21e3efc5a5e",
+  "review": "[BeefAPI safety notice] Your request was flagged by the platform content safety check (category: violence). This is a warning only; repeated flags may lead to manual review or account limits. Please adjust the request. If you believe this is a mistake, contact support with request id 202610071629222664594268268d9d6zSomGmdi.\n\n### 1. Actual Timeline of Events\n- **00:00–00:05:** Pelican pedaling smoothly rightward along a neon synthwave seafront.\n- **00:06:** A neon fish jumps vertically behind the guardrail; a retro \"FISH.EXE\" dialogue box scrolls in from the top right.\n- **00:07–00:08:** The fish vanishes behind the pelican without entering its beak; the dialog bar hits 100% (\"Caught 1 fish\").\n- **00:09–00:10:** Dialogue box scrolls off-screen left; a traffic cone enters from the right.\n- **00:11–00:13:** Pelican hops cleanly over the cone and lands back on the road.\n- **00:14–00:16:** Pelican continues pedaling along the promenade.\n- **00:17–00:19:** Sparks fly from the rear wheel as the bike skids to a halt; pixel sunglasses drop from above onto the pelican’s face.\n\n---\n\n### 2. Beat Evaluation\n- **Beat 1 (Pelican cycling along seafront):** **Passes.** Mood, movement, and synthwave aesthetic read immediately.\n- **Beat 2 (Fish leaps into pouch + FISH.EXE 100%):** **Fails.** The \"FISH.EXE\" dialog reads clearly, but the fish trajectory misses the pelican entirely—it jumps behind the bike and simply disappears without the pelican opening its bill or swallowing.\n- **Beat 3 (Hop over traffic cone):** **Passes.** Timing, arc, and clearance over the cone are crisp and legible.\n- **Beat 4 (Braking stop + sunglasses drop):** **Passes.** Friction sparks sell the stop, and the sunglasses land squarely on the eyes for a clear finish.\n\n---\n\n### 3. Visual Problems to Fix (Severity Order)\n1. **00:06–00:07 (Missing Catch Animation):** The fish jumps behind the bike rather than into the pouch.  \n   *Fix:* Animate the fish arcing higher toward the pelican’s head; add an open-beak frame and expand the pouch momentarily upon entry.\n2. **00:00–00:04 (UI Clutter / Stray Overlay):** A gray Chinese/date UI card sits static in the top-right, clashing with the later FISH.EXE pop-up.  \n   *Fix:* Delete this upper-right card entirely or replace it with consistent VHS HUD elements.\n3. **00:17–00:19 (Legs Still Pedaling During Brake):** While sparks fly from the tire, the pelican's legs continue moving through the pedal stroke.  \n   *Fix:* Freeze the pedals/legs in a braced stance once the skid begins."
+}

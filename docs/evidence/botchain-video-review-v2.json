@@ -1,0 +1,23 @@
+{
+  "market": "https://market.bflabs.app",
+  "service": "https://market.bflabs.app/api/services/video-gemini-3-8-flash/call",
+  "network": "eip155:968",
+  "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+  "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+  "asset": "0x75edC9335175Fc0552D51D48439F229c10420fe3",
+  "quoteMaxAtomic": "38600",
+  "video": "https://market.bflabs.app/demo/pelican-neon-ride-v2.mp4",
+  "prompt": "You are the reviewer for a 20-second animated short. The editor who made it cannot watch video, so be concrete.\nIntended beats: a pelican rides a bicycle along a neon synthwave seafront; around 0:07 a fish leaps out of the sea into its throat pouch while a FISH.EXE billboard fills to 100%; around 0:12 it hops over a traffic cone; around 0:17 it brakes to a stop and sunglasses drop onto its face.\n1) List what actually happens with mm:ss timestamps.\n2) For each intended beat, say whether it reads clearly, and if not, why.\n3) List the visual problems an editor should fix, most severe first, each with a timestamp and a concrete fix.\nKeep it under 350 words.",
+  "httpStatus": 200,
+  "elapsedMs": 35323,
+  "model": "gemini-3.8-flash",
+  "usage": {
+    "prompt_tokens": 1495,
+    "completion_tokens": 1637,
+    "total_tokens": 3132
+  },
+  "chargedAtomic": "5659",
+  "permit2ApproveTx": null,
+  "settleTx": "0xf65139c176a49d87da00f35970c884b686f8c97be8b0a41b598fea16dca3b2ce",
+  "review": "[BeefAPI safety notice] Your request was flagged by the platform content safety check (category: violence). This is a warning only; repeated flags may lead to manual review or account limits. Please adjust the request. If you believe this is a mistake, contact support with request id 202610071628448381250938268d9d626FMqUEX.\n\n### 1. What Actually Happens\n* **00:00–00:05:** Pelican pedals steadily down a synthwave neon seafront. \n* **00:06:** A cyan fish abruptly spawns near the rear wheel on the pavement. A floating Windows-style “FISH.EXE” dialog appears top-right.\n* **00:07–00:09:** The fish vanishes, pelican’s beak opens, and the FISH.EXE box hits 100% before drifting left behind the pelican’s head.\n* **00:10–00:13:** A small orange traffic cone approaches; pelican hops the bicycle clean over it at 00:12 and lands smoothly.\n* **00:14–00:16:** Resumes normal pedaling.\n* **00:17:** Sparks emit from the rear axle/pedal area as it brakes.\n* **00:18–00:19:** Pedaling stops; pixelated sunglasses fall from the sky onto its eyes, though the background continues scrolling.\n\n---\n\n### 2. Beat Readability\n* **Seafront ride:** **Yes.** Neon palette, grid road, and cycling cycle read immediately.\n* **Fish catch & FISH.EXE:** **No.** The fish clips near the pavement/rear wheel at 00:06 instead of arching from the water into the beak. Also, FISH.EXE drifts as a floating UI window rather than reading as a roadside billboard.\n* **Cone hop:** **Yes.** Clearly telegraphed, jumped, and cleared at 00:12.\n* **Braking stop + sunglasses:** **Partial.** Sparks and sunglasses landing read well, but the bike never comes to a true stop because the background scrolling never decelerates.\n\n---\n\n### 3. Visual Fixes to Make (Ranked by Severity)\n1. **00:06 – Fish Trajectory:** Fish appears unnaturally beneath the rear frame.  \n   * **Fix:** Re-animate the fish leaping in a high arc from the ocean (right background) directly into an open beak pouch.\n2. **00:17–00:19 – No Deceleration:** Sparks fly, but parallax background and road grid scroll at full speed.  \n   * **Fix:** Ease out and completely halt background scrolling by 00:18 so the bike actually stops.\n3. **00:06–00:09 – Drifting UI:** FISH.EXE drifts across screen space and clips behind the pelican.  \n   * **Fix:** Anchor FISH.EXE onto a roadside billboard post or fix it as a static screen overlay."
+}

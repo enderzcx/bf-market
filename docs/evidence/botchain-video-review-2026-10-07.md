@@ -31,3 +31,20 @@ AGENT_PRIVATE_KEY=0x... bun scripts/video-review-demo.ts --send --network botcha
 ## 失败的第一次
 
 同一分钟内的第一次调用在 127 s 后返回 `502 {"error":"The model provider call failed. You were not charged."}`，没有结算交易。随后直接调上游同一模型 15 s 返回正常，第二次付费调用成功。买家余额只减少了第二次的 5968，证明失败那次确实没扣款。
+
+## 补跑 v1–v3（2026-10-08）
+
+为了在 BOT Chain 上也留下和 Fuji 一样完整的四轮记录，同一买家、同一服务把 v1、v2、v3 三版片子各付费审了一次（v4 就是上面那一次）。这三次是在 v4 之后补跑的，不是按改片顺序实时发生的。
+
+| 版本 | 实际扣款（atomic USDT） | 结算交易 | 区块 |
+| --- | --- | --- | --- |
+| v1 | 4834 | [`0xe40b7a9a…f88575b1`](https://scan.bohr.life/tx/0xe40b7a9a68e3dfbffc996eb4041ba87b2ef53e55aacf75527f492132f88575b1) | 26041357 |
+| v2 | 5659 | [`0xf65139c1…dca3b2ce`](https://scan.bohr.life/tx/0xf65139c176a49d87da00f35970c884b686f8c97be8b0a41b598fea16dca3b2ce) | 26041430 |
+| v3 | 2644 | [`0xf2ea8a27…3efc5a5e`](https://scan.bohr.life/tx/0xf2ea8a2764ddebeec9db910b1c488463477b593ca6bdbb2aa5d0b21e3efc5a5e) | 26041467 |
+| v4 | 5968 | [`0x06beaa25…29ed`](https://scan.bohr.life/tx/0x06beaa253dc16648560c258fb0f7a2e97dc140fc1ee4541aa1ece7834bb629ed) | 26035281 |
+
+四轮合计 19105 atomic USDT（0.019105）。三笔新交易都已链上读回：status 1，交易内唯一的 USDT `Transfer` 是买家 `0x4580…9ada` → 收款 `0x9Fb2…7A4A`，金额与 `chargedAtomic` 一致。原文在 `botchain-video-review-v1.json`、`-v2.json`、`-v3.json`。
+
+v1 的意见和 Fuji 那次一致：00:17 没有刹车，00:08 鱼没进喉囊，00:07 FISH.EXE 窗口在画面里漂。
+
+讲解片（BOT Chain 版，94 秒）：https://youtu.be/1JVm8jtzhgU
