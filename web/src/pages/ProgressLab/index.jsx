@@ -27,7 +27,7 @@ export default function ProgressLab({preview=true}){
  useEffect(()=>{document.title=preview?'进度动效方案 · 伙伴中心':'产品进展 · 伙伴中心';},[preview]);
  function choose(key){setVariant(key);history.replaceState(null,'',`?variant=${key}`);}
  return <main className={`chain-lab chain-${variant} ${preview?'':'chain-public'} ${running?'':'chain-paused'}`}>
-  <header className='chain-top'><a href='/'>伙伴中心 <span>BF Labs</span></a><a href={preview?'/progress':'/docs'}>{preview?'查看产品进展 ↗':'使用说明 ↗'}</a></header>
+  <header className='chain-top'><a href='/partner'>伙伴中心 <span>BF Labs</span></a><a href={preview?'/partner/progress':'/partner/docs'}>{preview?'查看产品进展 ↗':'使用说明 ↗'}</a></header>
   <div className='chain-controls' aria-label='动效方案'>{preview ? <div role='group' aria-label='选择方案'>{Object.entries(variants).map(([key,[name]])=><button key={key} aria-pressed={variant===key} onClick={()=>choose(key)}>{name}</button>)}</div> : <span className='chain-version'>产品进展 / Avalanche Fuji</span>}<button className='chain-toggle' onClick={()=>setRunning(!running)}>{running?'暂停动效':'播放动效'}</button></div>
   <section className='chain-story'><p className='chain-kicker'>BUILDING PARTNER CENTER / 产品进展</p><h1>{variants[variant][1]}</h1><p className='chain-intro'>商家确认佣金，伙伴核对到账。<br/>下一步，让佣金有资金保障。</p><div className='chain-legend'><span><i/>已验证 · Fuji</span><span><i/>开发与规划</span></div></section>
   <section className='chain-map' aria-label={preview?'付款到佣金到账及后续开发链路':'已验证的 Fuji 付款与返佣链路'} key={variant}>

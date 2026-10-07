@@ -24,9 +24,9 @@ describe('partner public home', () => {
     expect(html).toContain('/global/console-preview.png');
     expect(html).toContain('class="global-public-header"');
     expect(html).toContain('class="global-public-footer"');
-    expect(html).toContain('href="/docs"');
-    expect(html).toContain('href="/login"');
-    expect(html).toContain('href="/console"');
+    expect(html).toContain('href="/partner/docs"');
+    expect(html).toContain('href="/partner/login"');
+    expect(html).toContain('href="/partner/console"');
     expect(html).not.toContain('JSON-tool');
     expect(html).not.toContain('自助注册');
     expect(html).not.toContain('app-shell');

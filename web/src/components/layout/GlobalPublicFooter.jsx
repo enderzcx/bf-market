@@ -29,7 +29,7 @@ const COPY = { community: '相关链接', navigation: '页脚导航' };
 
 
 export default function GlobalPublicFooter({
-  homeHref = '/',
+  homeHref = '/partner',
   nav = GLOBAL_PUBLIC_NAV_LINKS,
   brand = GLOBAL_PUBLIC_HEADER_COPY.brand,
   navigationLabel = COPY.navigation,

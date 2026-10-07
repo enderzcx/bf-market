@@ -3,8 +3,9 @@ type StaticFile = { file: string; type: string };
 // Explicit SPA routes keep unknown API paths and files out of the HTML fallback.
 const pages = new Set([
   '/', '/index.html', '/login', '/console', '/console/orders',
-  '/console/settlements', '/console/wallet', '/docs', '/progress', '/progress-lab',
-  '/market', '/records',
+  '/register', '/reset', '/console/settlements', '/console/wallet', '/docs',
+  '/progress', '/progress-lab', '/market', '/records', '/partner',
+  '/wallet',
 ]);
 const types: Record<string, string> = {
   js: 'text/javascript; charset=utf-8',
@@ -21,7 +22,11 @@ const types: Record<string, string> = {
 
 export function staticFileFor(path: string): StaticFile | null {
   if (path === '/demo') return { file: 'demo.html', type: 'text/html; charset=utf-8' };
-  if (pages.has(path)) return { file: 'index.html', type: 'text/html; charset=utf-8' };
+  if (
+    pages.has(path) ||
+    path.startsWith('/partner/') ||
+    /^\/wallet\/0x[0-9a-fA-F]{40}$/.test(path)
+  ) return { file: 'index.html', type: 'text/html; charset=utf-8' };
   // Legacy names remain available for existing HTTP fixtures. No source maps,
   // arbitrary root files, encoded separators or dot-directory traversal.
   if (path === '/app.js' || path === '/style.css') {

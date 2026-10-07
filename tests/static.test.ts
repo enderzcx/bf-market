@@ -2,10 +2,39 @@ import { expect, test } from 'bun:test';
 import { staticFileFor } from '../src/static.ts';
 
 test('SPA page refreshes resolve while API and removed product routes do not', () => {
-  for (const path of ['/', '/login', '/console', '/console/orders', '/console/settlements', '/console/wallet', '/docs', '/progress', '/progress-lab']) {
+  for (const path of [
+    '/',
+    '/login',
+    '/register',
+    '/reset',
+    '/console',
+    '/console/orders',
+    '/console/settlements',
+    '/console/wallet',
+    '/docs',
+    '/progress',
+    '/progress-lab',
+    '/partner',
+    '/partner/login',
+    '/partner/docs',
+    '/partner/progress',
+    '/partner/console/orders',
+    '/partner/register',
+    '/partner/reset',
+    '/wallet',
+    '/wallet/0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada',
+  ]) {
     expect(staticFileFor(path)?.file).toBe('index.html');
   }
-  for (const path of ['/api/state', '/api/unknown', '/console/token', '/console/topup', '/pricing', '/missing']) {
+  for (const path of [
+    '/api/state',
+    '/api/unknown',
+    '/console/token',
+    '/console/topup',
+    '/pricing',
+    '/missing',
+    '/wallet/0xZZ',
+  ]) {
     expect(staticFileFor(path)).toBeNull();
   }
 });

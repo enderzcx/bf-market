@@ -454,7 +454,7 @@ const GlobalHome = () => {
                   </li>
                 ))}
               </ul>
-              <a href='/docs'>{COPY.ratesLink}</a>
+              <a href='/partner/docs'>{COPY.ratesLink}</a>
             </div>
           </div>
         </section>
@@ -495,7 +495,7 @@ const GlobalHome = () => {
         </section>
       </main>
 
-      <GlobalPublicFooter homeHref='/' />
+      <GlobalPublicFooter homeHref='/partner' />
     </div>
   );
 };

@@ -17,42 +17,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
-import { LocaleProvider } from '@douyinfe/semi-ui';
-import zhCN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN';
-import { BrowserRouter } from 'react-router-dom';
-import '@douyinfe/semi-ui/dist/css/semi.css';
-import { PartnerProvider } from './context/Partner';
-import PageLayout from './components/layout/PageLayout';
-import './index.css';
-import './styles/global-site.css';
-import './pages/GlobalConsole/global-console.css';
-import './pages/GlobalConsole/invitation.css';
-import './styles/partner-chrome.css';
-import './styles/partner-visual.css';
+import { resolveLegacyRedirect } from './market/redirects.js';
 
-if (typeof window !== 'undefined') {
-  console.log(
-    '%cWE ❤ NEWAPI%c Github: https://github.com/QuantumNous/new-api',
-    'color: #10b981; font-weight: bold; font-size: 24px;',
-    'color: inherit; font-size: 14px;',
+const PartnerRoot = lazy(() => import('./partner/PartnerRoot.jsx'));
+const MarketRoot = lazy(() => import('./market/MarketRoot.jsx'));
+const pathname = window.location.pathname;
+const legacyTarget = resolveLegacyRedirect(window.location);
+const isPartner =
+  pathname === '/partner' || pathname.startsWith('/partner/');
+
+if (legacyTarget) {
+  window.location.replace(legacyTarget);
+} else {
+  const Root = isPartner ? PartnerRoot : MarketRoot;
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <Suspense fallback={null}>
+        <Root />
+      </Suspense>
+    </React.StrictMode>,
   );
 }
-
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <LocaleProvider locale={zhCN}>
-    <PartnerProvider>
-      <BrowserRouter
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        <PageLayout />
-      </BrowserRouter>
-    </PartnerProvider>
-    </LocaleProvider>
-  </React.StrictMode>,
-);

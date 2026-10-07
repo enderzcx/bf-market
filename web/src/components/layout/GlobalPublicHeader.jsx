@@ -31,16 +31,16 @@ export const GLOBAL_PUBLIC_HEADER_COPY = {
 };
 
 export const GLOBAL_PUBLIC_NAV_LINKS = [
-  { text: '产品进展', itemKey: 'progress', to: '/progress' },
+  { text: '产品进展', itemKey: 'progress', to: '/partner/progress' },
   {
     text: GLOBAL_PUBLIC_HEADER_COPY.docs,
     itemKey: 'docs',
-    to: '/docs',
+    to: '/partner/docs',
   },
   {
     text: GLOBAL_PUBLIC_HEADER_COPY.login,
     itemKey: 'login',
-    to: '/login',
+    to: '/partner/login',
   },
 ];
 
@@ -69,7 +69,7 @@ export default function GlobalPublicHeader({
     <header className='global-public-header'>
       <a
         className='global-public-header-brand'
-        href={labels.homeHref ?? '/'}
+        href={labels.homeHref ?? '/partner'}
         aria-label={labels.brandHome}
       >
         <GlobalBrandMark />
@@ -91,7 +91,7 @@ export default function GlobalPublicHeader({
       </nav>
       <a
         className='global-public-header-cta'
-        href={labels.ctaHref ?? '/console'}
+        href={labels.ctaHref ?? '/partner/console'}
       >
         {labels.getStarted}
       </a>
