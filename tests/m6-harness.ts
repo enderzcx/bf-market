@@ -23,6 +23,7 @@ import { compileErc8004, deploymentSteps } from '../scripts/erc8004-artifacts.ts
 import {
   createRpcAgentRegistryChain,
   identityRegistryAbi,
+  type AgentRegistryChain,
 } from '../src/agent-registry.ts';
 import {
   DEFAULT_BEEFAPI_LLM_BASE_URL,
@@ -253,6 +254,10 @@ export function buildApp(
     llmGlobalDailyCapAtomic?: bigint;
     llmRequestTimeoutMs?: number;
     agentOrigin?: string;
+    // A stub registry keeps the read-API tests independent of ganache RPC and
+    // lets them count chain reads.
+    agentRegistryChain?: AgentRegistryChain;
+    now?: () => number;
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'settlement-m6-'));
@@ -299,6 +304,7 @@ export function buildApp(
     fingerprint: runtimeFingerprint(config),
     llmPayerDailyCapAtomic: config.llmPayerDailyCapAtomic,
     llmGlobalDailyCapAtomic: config.llmGlobalDailyCapAtomic,
+    now: overrides.now,
   });
   closers.push(() => store.close());
   const chain = new MockPayoutChain();
@@ -318,11 +324,14 @@ export function buildApp(
     source,
     config,
     publicDir,
-    agentRegistryChain: createRpcAgentRegistryChain({
-      rpcUrl: env.url,
-      chainId: 31337,
-      registry: env.registry,
-    }),
+    now: overrides.now,
+    agentRegistryChain:
+      overrides.agentRegistryChain ??
+      createRpcAgentRegistryChain({
+        rpcUrl: env.url,
+        chainId: 31337,
+        registry: env.registry,
+      }),
     permit2Facilitator: overrides.permit2Facilitator,
     serviceCatalog,
   });

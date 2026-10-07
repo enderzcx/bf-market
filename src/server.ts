@@ -58,6 +58,7 @@ import {
   type StarterGasChain,
 } from "./starter-gas.ts";
 import { createOpsSigner, type OpsSigner } from "./ops-signer.ts";
+import { createReadApis } from "./read-apis.ts";
 import { createServiceCatalog, type ServiceCatalog } from "./services.ts";
 import { meteredUpperBound } from "./llm.ts";
 import { createServiceDiscovery, parseDiscoveryFilter } from "./discovery.ts";
@@ -643,13 +644,26 @@ export function createApp(opts: {
     };
   };
 
-  const parseReceiptLimit = (value: string | null): number => {
-    if (value == null || value === "") return 50;
+  const parseLimit = (value: string | null, fallback: number): number => {
+    if (value == null || value === "") return fallback;
     if (!/^[0-9]+$/.test(value)) throw new ServiceError(400, "Invalid limit.");
-    const n = Number(value);
-    if (n < 0) throw new ServiceError(400, "Invalid limit.");
-    return Math.min(n, 200);
+    return Math.min(Number(value), 200);
   };
+
+  const parseReceiptLimit = (value: string | null): number => parseLimit(value, 50);
+
+  // The wallet summary defaults to the 10 most recent receipts.
+  const parseSummaryLimit = (value: string | null): number => parseLimit(value, 10);
+
+  const readApis = createReadApis({
+    store: opts.store,
+    config: opts.config,
+    catalog: serviceCatalog,
+    registry: registryChain,
+    now,
+    publicAgent,
+    publicReceipt,
+  });
 
   const AGENT_CHALLENGE_PURPOSES = new Set(["agent-draft", "starter-gas"] as const);
   type AgentChallengePurpose = "agent-draft" | "starter-gas";
@@ -1213,6 +1227,25 @@ export function createApp(opts: {
         const stats = opts.store.publicServiceStats();
         return json(200, stats);
       }
+      // Public read surface (architecture §4): a wallet's spend and budget, the
+      // agents an owner holds, and the provider catalog. Read only, no session.
+      const walletSummaryMatch =
+        req.method === "GET"
+          ? /^\/api\/wallets\/([^/]+)\/summary$/.exec(url.pathname)
+          : null;
+      if (walletSummaryMatch) {
+        const address = parseAddress(decodeURIComponent(walletSummaryMatch[1] ?? ""));
+        return json(200, readApis.walletSummary(address, parseSummaryLimit(url.searchParams.get("limit"))));
+      }
+      const ownerAgentsMatch =
+        req.method === "GET" ? /^\/api\/owners\/([^/]+)\/agents$/.exec(url.pathname) : null;
+      if (ownerAgentsMatch) {
+        const address = parseAddress(decodeURIComponent(ownerAgentsMatch[1] ?? ""));
+        return json(200, await readApis.ownerAgents(address));
+      }
+      if (req.method === "GET" && url.pathname === "/api/providers") {
+        return json(200, readApis.providers());
+      }
       if (req.method !== "POST")
         return json(405, { error: "Method not allowed." });
 
@@ -1233,6 +1266,15 @@ export function createApp(opts: {
         requireHost(req);
         const grant = await requestStarterGas(await readJson(req));
         return json(grant.status === "confirmed" ? 200 : 202, grant);
+      }
+      // Public refresh: re-reads ownerOf/getAgentWallet from the chain and
+      // mirrors them into the database. Throttled per agent (architecture N9).
+      const agentRefreshMatch = /^\/api\/agents\/([^/]+)\/refresh$/.exec(url.pathname);
+      if (agentRefreshMatch) {
+        requireHost(req);
+        const agentId = decodeURIComponent(agentRefreshMatch[1] ?? "");
+        if (!/^[0-9]+$/.test(agentId)) throw new ServiceError(400, "Invalid agent id.");
+        return json(200, await readApis.refreshAgent(agentId));
       }
 
       // Public paid-service call: a wallet-signed x402 Permit2 payment is the

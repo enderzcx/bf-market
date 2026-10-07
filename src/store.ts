@@ -446,6 +446,29 @@ export function createStore(opts: {
     return row ? mapAgentDraft(row) : null;
   };
 
+  // Agents the database currently associates with one owner or one wallet. The
+  // owner console re-checks them against the chain, so these are candidates,
+  // not a final answer.
+  const listAgentsByOwner = (owner: string): AgentRecord[] => {
+    const rows = db
+      .query(
+        `SELECT * FROM agents WHERE owner = ?
+         ORDER BY chain_id ASC, CAST(agent_id AS INTEGER) ASC`,
+      )
+      .all(owner) as Record<string, unknown>[];
+    return rows.map(mapAgent);
+  };
+
+  const listAgentsByWallet = (wallet: string): AgentRecord[] => {
+    const rows = db
+      .query(
+        `SELECT * FROM agents WHERE agent_wallet = ?
+         ORDER BY chain_id ASC, CAST(agent_id AS INTEGER) ASC`,
+      )
+      .all(wallet) as Record<string, unknown>[];
+    return rows.map(mapAgent);
+  };
+
   // ---- Daily budget ledger (architecture §1) --------------------------------
   // Every helper below takes an already-normalized address: the public methods
   // run their inputs through `address()` first.
@@ -472,6 +495,27 @@ export function createStore(opts: {
       )
       .all(wallet) as Record<string, unknown>[];
     return rows.map(mapCeiling);
+  };
+
+  // Ceilings an address wrote. It keeps a former owner's console able to show
+  // and clear a ceiling that is still attached to an agent that moved away.
+  const listCeilingRowsBySetter = (signer: string): CeilingRecord[] => {
+    const rows = db
+      .query(
+        `SELECT * FROM agent_budget_ceilings WHERE set_by = ?
+         ORDER BY chain_id ASC, CAST(agent_id AS INTEGER) ASC`,
+      )
+      .all(signer) as Record<string, unknown>[];
+    return rows.map(mapCeiling);
+  };
+
+  // Moves an agent's ceiling to the wallet the chain reports, so the ceiling
+  // follows the agent (architecture §3.4). `''` detaches it from every wallet.
+  const moveCeilingRow = (chainId: number, agentId: string, wallet: string) => {
+    db.run(
+      `UPDATE agent_budget_ceilings SET wallet = ? WHERE chain_id = ? AND agent_id = ?`,
+      [wallet, chainId, agentId],
+    );
   };
 
   const getWalletBudgetRow = (wallet: string): WalletBudgetRecord | null => {
@@ -1637,6 +1681,38 @@ export function createStore(opts: {
         .all(...params) as Record<string, unknown>[];
       return rows.map(mapAgent);
     },
+    listAgentsByOwner(owner: Address): AgentRecord[] {
+      return listAgentsByOwner(address(owner, "代理所有者地址"));
+    },
+    listAgentsByWallet(wallet: Address): AgentRecord[] {
+      return listAgentsByWallet(address(wallet, "付款钱包地址"));
+    },
+    listCeilingsBySetter(signer: Address): CeilingRecord[] {
+      return listCeilingRowsBySetter(address(signer, "签名人地址"));
+    },
+    // Chain refresh for the console: writes the verified owner and wallet back
+    // and drags the agent's ceiling along with it, in one transaction. Never
+    // inserts, so an agent the platform did not register stays unknown (N3).
+    syncAgentChainState(
+      chainId: number,
+      agentId: string,
+      owner: Address,
+      wallet: Address | "",
+      at?: number,
+    ): boolean {
+      const target = wallet === "" ? "" : address(wallet, "付款钱包地址");
+      const at_ = at ?? now();
+      return tx(() => {
+        const result = db.run(
+          `UPDATE agents SET owner = ?, agent_wallet = ?, refreshed_at = ?
+           WHERE chain_id = ? AND agent_id = ?`,
+          [address(owner, "代理所有者地址"), target, at_, chainId, agentId],
+        );
+        if (result.changes !== 1) return false;
+        moveCeilingRow(chainId, agentId, target);
+        return true;
+      });
+    },
     getStarterGas,
     sumStarterGasForDay(day: string): bigint {
       const row = db
@@ -1974,6 +2050,10 @@ export function createStore(opts: {
     getSpend: getSpendRow,
     spendFor(payer: Address, day: string): SpendTotals {
       return spendTotalsRow(address(payer, "付款地址"), day);
+    },
+    // All meters (upto) spend of one UTC day, every payer, for the global cap.
+    uptoSpendForDay(day: string): bigint {
+      return uptoSpendForDay(day);
     },
     // Effective daily budget of one payment wallet: the smallest of every ceiling
     // naming it and its own value. `undefined` means no user budget is set.

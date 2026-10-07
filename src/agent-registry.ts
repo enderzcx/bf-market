@@ -20,6 +20,11 @@ export const identityRegistryAbi = parseAbi([
   'function register(string agentURI) returns (uint256 agentId)',
   'function ownerOf(uint256 agentId) view returns (address)',
   'function getAgentWallet(uint256 agentId) view returns (address)',
+  // Owner-driven wallet rotation (EIP-712 consent) plus the ERC-721 transfer
+  // used to build the transferred-away cases.
+  'function setAgentWallet(uint256 agentId, address newWallet, uint256 deadline, bytes signature)',
+  'function unsetAgentWallet(uint256 agentId)',
+  'function transferFrom(address from, address to, uint256 agentId)',
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)',
 ]);
 
