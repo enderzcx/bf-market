@@ -489,6 +489,45 @@ test('a reverted metered settlement releases the hold', async () => {
   expect(store.getSpend(keyFor(signed.nonce))!.amount).toBe(GLM_CHARGE);
 });
 
+test('a mismatched metered settlement releases the hold and settles nothing', async () => {
+  const stub = startLlmStub();
+  const { app, store } = await setup({
+    stub,
+    facilitator: mockFacilitator(async () => ({ ok: false, reason: 'mismatch' })),
+  });
+  const body = glmBody();
+  const requirement = await offer(app, GLM, body);
+  const signed = await manualUptoPayload({ requirement, account: buyer, chainId: CHAIN_ID });
+  const res = await req(app, `/api/services/${GLM}/call`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    paymentSignature: signed.header,
+  });
+  expect(res.status).toBe(502);
+  expect(await errorText(res)).toBe('Settlement receipt does not match the requirements.');
+
+  const key = keyFor(signed.nonce);
+  const row = store.getSpend(key)!;
+  // The hold had already shrunk to the actual usage; the mismatch gives it back.
+  expect(row.scheme).toBe('upto');
+  expect(row.state).toBe('released');
+  expect(row.amount).toBe(GLM_CHARGE);
+  // Released rows stop counting, so the payer drops out of the day's spend.
+  expect(store.spendFor(buyerAddress, row.day)).toEqual({
+    charged: 0n,
+    held: 0n,
+    llmCharged: 0n,
+    llmHeld: 0n,
+  });
+
+  // Nothing settled: the payment is failed and stays unconsumed, so the
+  // signature was never spent and no receipt exists for it.
+  const payment = store.getServicePayment(key)!;
+  expect(payment.status).toBe('failed');
+  expect(payment.consumed).toBe(false);
+  expect(payment.error).toBe('Settlement receipt does not match the requirements.');
+});
+
 test('a pending metered settlement keeps the actual charge held', async () => {
   let outcome: Permit2ReceiptResult = { ok: false, reason: 'pending' };
   const { app, store } = await setup({
