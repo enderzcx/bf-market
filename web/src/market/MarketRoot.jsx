@@ -1,13 +1,9 @@
 import React from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router-dom';
 import { LanguageProvider, useT } from './i18n/index.js';
+import HomePage from './pages/HomePage.jsx';
+import MarketPage from './pages/MarketPage.jsx';
 import './styles/base.css';
-
-const ASCII_WORDMARK = String.raw` ____  _____   __  __    _    ____  _  _______ _____
-| __ )|  ___| |  \/  |  / \  |  _ \| |/ / ____|_   _|
-|  _ \| |_    | |\/| | / _ \ | |_) | ' /|  _|   | |
-| |_) |  _|   | |  | |/ ___ \|  _ <| . \| |___| |
-|____/|_|     |_|  |_/_/   \_\_| \_\_|\_\_____|_|`;
 
 function Header() {
   const location = useLocation();
@@ -154,25 +150,6 @@ function Footer() {
   );
 }
 
-function HomePage() {
-  const { t } = useT();
-  return (
-    <main className='market-container market-hero'>
-      <pre className='market-ascii' aria-hidden='true'>
-        {ASCII_WORDMARK}
-      </pre>
-      <h1 className='market-tagline'>
-        {t('homeTagline')}
-        <span className='market-cursor' aria-hidden='true' />
-      </h1>
-      <p className='market-intro market-prose'>{t('homeLead')}</p>
-      <p className='market-page-note'>
-        <a href='/skill.md'>{t('homePromptLink')} · skill.md</a>
-      </p>
-    </main>
-  );
-}
-
 function PlaceholderPage({ titleKey, introKey, docs = false }) {
   const { t } = useT();
   return (
@@ -203,10 +180,7 @@ function MarketRoutes() {
       <Header />
       <Routes>
         <Route path='/' element={<HomePage />} />
-        <Route
-          path='/market'
-          element={<PlaceholderPage titleKey='marketTitle' introKey='marketIntro' />}
-        />
+        <Route path='/market' element={<MarketPage />} />
         <Route
           path='/wallet'
           element={<PlaceholderPage titleKey='consoleTitle' introKey='consoleIntro' />}
