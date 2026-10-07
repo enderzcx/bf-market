@@ -912,19 +912,21 @@ test('the Permit2 settlement switch is independent from the Fuji EIP-3009 switch
   expect(bot.x402Enabled).toBe(false);
   expect(getAddress(bot.permit2!)).toBe(getAddress(PERMIT2_ADDRESS));
 
-  // Fuji has no Permit2 deployment, so the new switch fails closed there.
-  expect(() =>
-    runtimeConfig({
-      chain: {
-        rpcUrl: 'https://example.invalid',
-        chainId: 43113,
-        contract: CONTRACT,
-        token: '0x5425890298aed601595a70AB815c96711a31Bc65',
-        privateKey: LOCAL_KEY,
-      },
-      source: 'fixture',
-      settlementX402Permit2Enabled: true,
-      opsPrivateKey: OPS_KEY,
-    }),
-  ).toThrow(/Permit2/);
+  // Fuji declares Permit2 in its profile, so the new switch resolves the
+  // canonical Permit2 and x402 proxy addresses there too.
+  const fuji = runtimeConfig({
+    chain: {
+      rpcUrl: 'https://example.invalid',
+      chainId: 43113,
+      contract: CONTRACT,
+      token: '0x5425890298aed601595a70AB815c96711a31Bc65',
+      privateKey: LOCAL_KEY,
+    },
+    source: 'fixture',
+    settlementX402Permit2Enabled: true,
+    opsPrivateKey: OPS_KEY,
+  });
+  expect(fuji.settlementX402Permit2Enabled).toBe(true);
+  expect(getAddress(fuji.permit2!)).toBe(getAddress(PERMIT2_ADDRESS));
+  expect(getAddress(fuji.x402Permit2Proxy!)).toBe(getAddress(X402_PROXY));
 });

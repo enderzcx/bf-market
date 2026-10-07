@@ -119,7 +119,20 @@ test("the three known profiles carry the expected chain facts", () => {
   expect(fuji.asset.address).toBe(CIRCLE_FUJI_USDC);
   expect(fuji.asset.decimals).toBe(6);
   expect(fuji.asset.transferMethods).toContain("eip3009");
+  expect(fuji.asset.transferMethods).toContain("permit2");
+  expect(fuji.permit2?.toLowerCase()).toBe(
+    "0x000000000022d473030f116ddee9f6b43ac78ba3",
+  );
+  expect(fuji.x402Permit2Proxy?.toLowerCase()).toBe(
+    "0x402085c248eea27d92e8b30b2c58ed07f9e20001",
+  );
+  expect(fuji.identityRegistry?.toLowerCase()).toBe(
+    "0x8004a818bfb912233c491871b3d84c89a494bd9e",
+  );
   expect(fuji.finality).toEqual({ kind: "finalized" });
+  // Fuji keeps requiring a payout contract by default (partner center); an
+  // x402-only deployment opts out with SETTLEMENT_PAYOUTS_DISABLED.
+  expect(fuji.payoutsRequired).toBe(true);
 
   expect(BOTCHAIN.chainId).toBe(968);
   expect(BOTCHAIN.caip2).toBe("eip155:968");
@@ -142,8 +155,7 @@ test("the three known profiles carry the expected chain facts", () => {
   expect(BOTCHAIN.finality).toEqual({ kind: "finalized" });
   expect(BOTCHAIN.payoutsRequired).toBe(false);
 
-  // Only the BOT Chain testnet declares a registry; Fuji and local inject one.
-  expect(fuji.identityRegistry).toBeUndefined();
+  // Fuji and BOT Chain declare a registry in the profile; local injects one.
   expect(local.identityRegistry).toBeUndefined();
 
   // No 677 mainnet or other networks were added.
@@ -248,15 +260,8 @@ test("botchain-testnet starts without a Settlement address and disables payouts"
 });
 
 test("agent registration and starter gas stay closed without a registry", () => {
-  const base = {
-    chain: {
-      rpcUrl: "https://example.invalid",
-      chainId: 43113,
-      contract: CONTRACT,
-      token: CIRCLE_FUJI_USDC,
-      privateKey: KEY,
-    },
-  };
+  // The local profile carries no registry until one is injected.
+  const base = localChain();
   expect(() =>
     runtimeConfig({ ...base, agentOrigin: "https://example.com" }),
   ).toThrow(/身份注册表/);
@@ -290,6 +295,41 @@ test("public networks pin the profile asset and reject a token override", () => 
       },
     }),
   ).toThrow(/代币必须固定为 USDT/);
+});
+
+test("an x402-only deployment opts out of the Fuji payout contract", () => {
+  const base = {
+    chain: {
+      rpcUrl: "https://example.invalid",
+      chainId: 43113,
+      token: CIRCLE_FUJI_USDC,
+    },
+  };
+  // Fuji demands a payout contract and an executor key by default.
+  expect(() => runtimeConfig(base)).toThrow(/结算合约/);
+  // The explicit opt-out starts with payouts disabled and no contract.
+  const x402Only = runtimeConfig({ ...base, payoutsDisabled: true });
+  expect(x402Only.payoutsEnabled).toBe(false);
+  expect(x402Only.payoutsDisabledReason).toContain("SETTLEMENT_PAYOUTS_DISABLED");
+  // A contract plus the opt-out is a contradiction, not a silent override.
+  expect(() =>
+    runtimeConfig({
+      ...base,
+      chain: { ...base.chain, contract: CONTRACT, privateKey: KEY },
+      payoutsDisabled: true,
+    }),
+  ).toThrow(/SETTLEMENT_PAYOUTS_DISABLED/);
+  // The env switch drives the same path.
+  const fromEnv = loadConfig({
+    cwd: tmp(),
+    env: {
+      SETTLEMENT_NETWORK: "fuji",
+      SETTLEMENT_RPC_URL: "https://example.invalid",
+      SETTLEMENT_PAYOUTS_DISABLED: "true",
+    },
+  });
+  expect(fromEnv.payoutsEnabled).toBe(false);
+  expect(fromEnv.chain.token).toBe(CIRCLE_FUJI_USDC);
 });
 
 test("sqlite path is namespaced per network and keeps Fuji compatible", () => {
