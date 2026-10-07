@@ -109,7 +109,7 @@ function Footer() {
           <span className='market-footer-label'>{t('footerNetwork')}</span>
           <span className='market-footer-value'>
             {network
-              ? `${network.displayName} · chain ${network.chainId} · ${network.caip2}`
+              ? `${network.displayName} · ${t('docsChain', { id: network.chainId })} · ${network.caip2}`
               : '—'}
           </span>
         </div>

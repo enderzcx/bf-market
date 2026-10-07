@@ -146,7 +146,7 @@ export default function DocsPage() {
 
       <DocSection id='quick-start' title={t('docsQuickStart')} intro={t('docsQuickIntro')}>
         <div className='docs-prompt'>
-          <span className='docs-prompt-label'>[PROMPT]</span>
+          <span className='docs-prompt-label'>[ {t('promptLabel')} ]</span>
           <code>{prompt ?? agentPromptForOrigin(window.location.origin)}</code>
         </div>
         <p className='docs-inline-links docs-prose'>

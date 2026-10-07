@@ -8,6 +8,10 @@
 
 前端源码位于 `web/`。先执行 `cd web && bun install --frozen-lockfile && bun run build`，再运行根目录服务。服务默认提供 `web/dist`，支持明确的伙伴中心页面路径及构建资源；`SETTLEMENT_PUBLIC_DIR` 可以覆盖该目录。不要把旧 `public/index.html` 作为新版入口。现有 `public/app.js` 保留为已验证 x402 客户端的源码依赖，随 React 构建打包。
 
+### BF Market 公共网站
+
+`web/` 同时包含 BF Market 公共网站和原伙伴中心。公共网站首页、市场、钱包控制台和双语文档分别位于 `/`、`/market`、`/wallet` 和 `/docs`；伙伴中心入口位于 `/partner`。从仓库根目录运行 `bun run build:web`，构建产物由 Worker Assets 提供。网站默认根据浏览器语言显示中文或英文，也可用 `?lang=zh` 或 `?lang=en` 指定语言，之后会记住选择。
+
 下面的本地链、来源和资金示例是原型开发说明，不代表已连接生产账本。
 
 ## 本地运行
