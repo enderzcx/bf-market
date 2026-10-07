@@ -208,6 +208,8 @@ test('skill.md, llms.txt and the catalog use the configured public origin', asyn
   expect(txt).toContain('https://market.example/skill.md');
   expect(txt).toContain('https://market.example/discovery/resources');
   expect(txt).toContain('https://market.example/mcp');
+  // The summary line names the network this deployment actually settles on.
+  expect(txt).toContain('Agent commerce platform on Local testnet.');
 
   const catalog = (await (await req(app, '/discovery/resources')).json()) as {
     items: Array<{ resource: string }>;

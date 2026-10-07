@@ -1119,7 +1119,10 @@ export function createApp(opts: {
       if (req.method === "GET" && url.pathname === "/llms.txt") {
         const host = requireHost(req);
         return new Response(
-          buildLlmsTxt({ origin: marketOriginOf(host) }),
+          buildLlmsTxt({
+            origin: marketOriginOf(host),
+            network: opts.config.network.displayName,
+          }),
           {
             status: 200,
             headers: {

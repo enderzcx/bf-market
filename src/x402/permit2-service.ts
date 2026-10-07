@@ -4,6 +4,7 @@ import type { RuntimeConfig } from '../config.ts';
 import { bazaarHttpExtension, bazaarMcpExtension } from '../discovery.ts';
 import {
   LLM_SETTLE_MARGIN_SECONDS,
+  LlmError,
   createLlmClient,
   meteredCharge,
   meteredUpperBound,
@@ -381,8 +382,12 @@ export function createPermit2Service(opts: {
         messages: input.request.messages,
         maxTokens: input.request.maxTokens,
         user: input.payer.toLowerCase(),
+        video: input.request.video,
       });
-    } catch {
+    } catch (err) {
+      if (err instanceof LlmError && err.reason === 'video') {
+        throw new ServiceError(502, `${err.message} You were not charged.`);
+      }
       throw new ServiceError(502, 'The model provider call failed. You were not charged.');
     }
   };
@@ -585,7 +590,7 @@ export function createPermit2Service(opts: {
     const pricing = definition.pricing.pricing;
     // The quote is fixed per model, so it does not depend on the body; the
     // request is still parsed here so a malformed body fails before any offer.
-    const request = parseMeteredRequest(input.body);
+    const request = parseMeteredRequest(input.body, pricing);
     const upperBound = meteredUpperBound(pricing);
     const uptoRequirements = opts.facilitator.uptoRequirementsOf({
       amount: upperBound.toString(),

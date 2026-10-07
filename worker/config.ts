@@ -34,6 +34,10 @@ export function configFromEnv(env: Env): RuntimeConfig {
       privateKey: (env.SETTLEMENT_PRIVATE_KEY as Hex | undefined) ?? undefined,
     },
     source: 'fixture',
+    // The Worker entry never runs the payout worker (see createDisabledChain),
+    // so a network that normally requires a payout contract (Fuji) starts here
+    // only when the deployment says so explicitly.
+    payoutsDisabled: flag(env.SETTLEMENT_PAYOUTS_DISABLED),
     // Static assets are served by Workers Assets; the Durable Object never reads
     // the filesystem.
     publicDir: '',

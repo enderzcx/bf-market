@@ -314,6 +314,11 @@ export function parsePublicOrigin(value: string): string {
 
 export type RuntimeConfigInput = Omit<Partial<RuntimeConfig>, 'chain'> & {
   chain: ChainConfigInput;
+  // Explicit opt-out of the Settlement payout worker. Networks whose profile
+  // requires a payout contract (Fuji) need this when the deployment only
+  // charges x402, such as the BF Market site. It cannot be combined with a
+  // contract, so "payouts off" never silently hides a configured payout.
+  payoutsDisabled?: boolean;
 };
 
 export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
@@ -331,9 +336,15 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
   const hasContract =
     partial.chain.contract != null &&
     partial.chain.contract !== ZERO_ADDRESS;
+  const payoutsDisabled = partial.payoutsDisabled ?? false;
+  if (payoutsDisabled && hasContract) {
+    throw new Error(
+      'SETTLEMENT_PAYOUTS_DISABLED 不能与结算合约同时配置：要么出款，要么显式关闭。',
+    );
+  }
   let contract: Address;
   let privateKey: Hex | undefined;
-  if (profile.payoutsRequired) {
+  if (profile.payoutsRequired && !payoutsDisabled) {
     contract = requiredAddress(partial.chain.contract, '结算合约');
     privateKey = requiredKey(partial.chain.privateKey, '执行钱包私钥');
   } else if (hasContract) {
@@ -346,10 +357,13 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
         ? requiredKey(partial.chain.privateKey, '执行钱包私钥')
         : undefined;
   }
-  const payoutsEnabled = profile.payoutsRequired || hasContract;
+  const payoutsEnabled =
+    !payoutsDisabled && (profile.payoutsRequired || hasContract);
   const payoutsDisabledReason = payoutsEnabled
     ? null
-    : `该网络（${profile.displayName}）未配置 Settlement 出款合约，出款 worker 未启动。`;
+    : payoutsDisabled
+      ? `出款已通过 SETTLEMENT_PAYOUTS_DISABLED 显式关闭（${profile.displayName}）。`
+      : `该网络（${profile.displayName}）未配置 Settlement 出款合约，出款 worker 未启动。`;
 
   const source = partial.source ?? 'fixture';
   const orderDemo = partial.orderDemo ?? false;
@@ -636,9 +650,13 @@ export function loadConfig(opts?: {
     );
   }
 
+  const payoutsDisabled = flagEnv(
+    env.SETTLEMENT_PAYOUTS_DISABLED,
+    'SETTLEMENT_PAYOUTS_DISABLED',
+  );
   let contract: Address | undefined;
   let privateKey: Hex | undefined;
-  if (profile.payoutsRequired) {
+  if (profile.payoutsRequired && !payoutsDisabled) {
     contract = requiredAddress(
       env.SETTLEMENT_CONTRACT ?? file?.contract,
       '结算合约',
@@ -721,6 +739,7 @@ export function loadConfig(opts?: {
         : undefined,
     },
     source,
+    payoutsDisabled,
     beefapiBaseUrl: env.BEEFAPI_TEST_BASE_URL ?? '',
     beefapiToken: env.SETTLEMENT_TEST_TOKEN ?? '',
     partnerUserId: intEnv(env.SETTLEMENT_PARTNER_USER_ID, 1, 'SETTLEMENT_PARTNER_USER_ID'),

@@ -192,7 +192,7 @@ function receiptStatusKey(status) {
   );
 }
 
-function WalletReceiptTable({ receipts, lang, t }) {
+function WalletReceiptTable({ receipts, lang, t, explorerUrl: explorerBase }) {
   if (receipts.length === 0) {
     return <p className='wallet-empty-receipts market-prose'>{t('walletReceiptEmpty')}</p>;
   }
@@ -216,8 +216,10 @@ function WalletReceiptTable({ receipts, lang, t }) {
             const explorerUrl =
               ['settled', 'delivered'].includes(receipt.status) &&
               typeof hash === 'string' &&
-              /^0x[0-9a-fA-F]{64}$/.test(hash)
-                ? `https://scan.bohr.life/tx/${hash}`
+              /^0x[0-9a-fA-F]{64}$/.test(hash) &&
+              typeof explorerBase === 'string' &&
+              explorerBase
+                ? `${explorerBase}/tx/${hash}`
                 : null;
             return (
               <tr key={receipt.paymentKey}>
@@ -832,7 +834,12 @@ function WalletSummaryBody({ address, refreshNonce, account, session }) {
 
       <section className='wallet-receipts-section' aria-labelledby='wallet-receipts-title'>
         <h2 id='wallet-receipts-title' className='wallet-section-title'>{t('walletReceiptsTitle')}</h2>
-        <WalletReceiptTable receipts={summary.recentReceipts ?? []} lang={lang} t={t} />
+        <WalletReceiptTable
+          receipts={summary.recentReceipts ?? []}
+          lang={lang}
+          t={t}
+          explorerUrl={summary.explorerUrl}
+        />
       </section>
     </>
   );

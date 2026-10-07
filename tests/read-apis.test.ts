@@ -134,6 +134,7 @@ test('summary returns the documented shape and null budget fields without any bu
       'agents',
       'asset',
       'day',
+      'explorerUrl',
       'network',
       'platform',
       'recentReceipts',
@@ -146,6 +147,8 @@ test('summary returns the documented shape and null budget fields without any bu
   );
   expect(payload.wallet).toBe(FRESH);
   expect(payload.network).toBe('eip155:31337');
+  // The console builds receipt links from this instead of hard-coding a chain.
+  expect(payload.explorerUrl).toBe('');
   // The asset is the configured network asset, the same one /api/services reports.
   expect(payload.asset).toEqual({
     address: profileForChainId(CHAIN_ID)!.asset.address,
@@ -729,12 +732,14 @@ test('providers groups the catalog by provider agent with draft profile fields',
     'llm-glm-5-3',
     'llm-claude-opus-5-5',
     'llm-gpt-6-astra',
+    'video-gemini-3-8-flash',
   ]);
   expect(services[0]).toMatchObject({ pricing: 'exact', price: '1000000' });
   expect(services.slice(1).map((service) => service.quoteMax)).toEqual([
     '19040',
     '36800',
     '69000',
+    '38600',
   ]);
   for (const service of services.slice(1)) {
     expect(service.pricing).toBe('metered');

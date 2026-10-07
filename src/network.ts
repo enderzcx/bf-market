@@ -23,6 +23,9 @@ export type NetworkAsset = {
 export type NetworkProfile = {
   readonly name: NetworkName;
   readonly displayName: string;
+  // Native gas token symbol, used in agent-facing copy. Cosmetic only; it is
+  // deliberately not part of the settlement fingerprint.
+  readonly nativeSymbol: string;
   readonly chainId: number;
   readonly caip2: string;
   readonly rpcUrl: string;
@@ -52,6 +55,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
   local: {
     name: 'local',
     displayName: 'Local testnet',
+    nativeSymbol: 'tBOT',
     chainId: 31337,
     caip2: 'eip155:31337',
     rpcUrl: 'http://127.0.0.1:8547',
@@ -68,6 +72,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
   fuji: {
     name: 'fuji',
     displayName: 'Avalanche Fuji',
+    nativeSymbol: 'AVAX',
     chainId: 43113,
     caip2: 'eip155:43113',
     rpcUrl: 'https://api.avax-test.network/ext/bc/C/rpc',
@@ -76,14 +81,26 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
       address: '0x5425890298aed601595a70AB815c96711a31Bc65',
       decimals: 6,
       symbol: 'USDC',
-      transferMethods: ['eip3009'],
+      // Fuji USDC has EIP-3009 for the partner-center order flow; Permit2 is
+      // what the BF Market agent platform settles through.
+      transferMethods: ['eip3009', 'permit2'],
     },
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+    x402Permit2Proxy: '0x402085c248EeA27D92E8b30b2C58ed07f9E20001',
+    // ERC-8004 official IdentityRegistry on Fuji (owner is the official
+    // deployer; registration is open to anyone).
+    identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
     finality: { kind: 'finalized' },
+    // The partner center pays commissions on Fuji, so a Fuji deployment still
+    // needs a Settlement contract and an executor key by default. An
+    // x402-only deployment (the BF Market site) opts out explicitly with
+    // SETTLEMENT_PAYOUTS_DISABLED instead of faking a contract.
     payoutsRequired: true,
   },
   'botchain-testnet': {
     name: 'botchain-testnet',
     displayName: 'BOT Chain Testnet',
+    nativeSymbol: 'tBOT',
     chainId: 968,
     caip2: 'eip155:968',
     rpcUrl: 'https://rpc.bohr.life',

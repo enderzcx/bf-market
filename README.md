@@ -114,6 +114,54 @@ CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab ./node_modules/.bin/wrang
 
 线上预算矩阵的验证记录在 `docs/evidence/worker-budget-botchain-testnet-2026-10-07.json`（部署版本、agent 编号、公开地址、每一步请求与结果、交易哈希）。
 
+## 同一套代码跑第二条链（Avalanche Fuji）
+
+BF Market 可以在另一条链上单独部署，和 BOT Chain 版互不影响。Fuji 已经具备 x402 付费路径需要的一切，不需要部署任何合约：
+
+- Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+- x402 exact Permit2 代理 `0x402085c248EeA27D92E8b30b2C58ed07f9E20001`、upto 代理 `0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002`
+- ERC-8004 官方身份注册表 `0x8004A818BFB912233c491871b3d84c89A494BD9e`
+- 测试 USDC `0x5425890298aed601595a70AB815c96711a31Bc65`
+
+Fuji 的 profile 默认仍要求 Settlement 出款合约（伙伴中心靠它在 Fuji 出款）。只做 x402 收款的部署用 `SETTLEMENT_PAYOUTS_DISABLED=true` 显式关掉出款，而不是塞一个占位合约地址；这个开关和结算合约不能同时配置。
+
+部署独立实例：
+
+```sh
+bun run build:web
+CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab \
+  npx wrangler deploy -c wrangler.fuji.jsonc
+```
+
+`wrangler.fuji.jsonc` 把 Worker 名、自定义域和 `SETTLEMENT_NETWORK=fuji` 固定下来；密钥用 `wrangler secret put -c wrangler.fuji.jsonc` 单独写入。线上验收记录见 `docs/evidence/fuji-market-x402-2026-10-07.json`。
+
+在 Fuji 上注册服务商、跑一次付费调用：
+
+```sh
+AGENT_PRIVATE_KEY=0x... bun scripts/agent-register-demo.ts \
+  --network fuji --send --url https://market-fuji.bflabs.app --role provider
+
+AGENT_PRIVATE_KEY=0x... bun scripts/agent-pay-demo.ts \
+  --network fuji --send --rpc https://api.avax-test.network/ext/bc/C/rpc \
+  --url https://market-fuji.bflabs.app/api/services/echo/call --body '{"hello":"fuji"}'
+```
+
+`llm-pay-demo.ts` 用同样的 `--network fuji --send` 跑按量计费的 upto 路径。
+
+## 视频理解服务
+
+视频理解服务 `video-gemini-3-8-flash` 在两条链上都提供，接收 `{"video_url","prompt"}`，服务端下载视频后交给 Gemini 3.8 Flash。一个看不了视频的剪辑 agent 用它审片、改片四轮的演示见 `docs/evidence/fuji-video-review-2026-10-07.md`：
+
+```sh
+# BOT Chain 测试网（market.bflabs.app，付测试 USDT）
+AGENT_PRIVATE_KEY=0x... bun scripts/video-review-demo.ts --send --network botchain-testnet \
+  --video https://market.bflabs.app/demo/pelican-neon-ride-v4.mp4 --out review.json
+
+# Avalanche Fuji（market-fuji.bflabs.app，付测试 USDC）
+AGENT_PRIVATE_KEY=0x... bun scripts/video-review-demo.ts --send \
+  --video https://market-fuji.bflabs.app/demo/pelican-neon-ride-v4.mp4 --out review.json
+```
+
 ## 给 agent 的入口
 
 - `GET /skill.md`：接入说明、服务与价格、每日预算、错误列表（英文）。

@@ -1,0 +1,54 @@
+{
+  // BF Market on Avalanche Fuji. A separate Worker from `bf-market` (BOT Chain)
+  // so both networks can run side by side with their own ledger, ops signer and
+  // route. Deploy with:
+  //   CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab \
+  //     npx wrangler deploy -c wrangler.fuji.jsonc
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bf-market-fuji",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "bun:sqlite": "./worker/shims/bun-sqlite.ts"
+  },
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/discovery/*",
+      "/internal/*",
+      "/mcp",
+      "/skill.md",
+      "/llms.txt",
+      "/registrations/*",
+      "/healthz"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "Ledger", "class_name": "Ledger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }],
+  // Secrets are set with `wrangler secret put -c wrangler.fuji.jsonc`:
+  // SETTLEMENT_OPS_PRIVATE_KEY, BEEFAPI_API_KEY, BEEFAPI_BASE_URL.
+  "vars": {
+    "SETTLEMENT_NETWORK": "fuji",
+    // Fuji requires a Settlement payout contract by default (partner center).
+    // This deployment only charges x402, so it opts out explicitly.
+    "SETTLEMENT_PAYOUTS_DISABLED": "true",
+    "SETTLEMENT_PUBLIC_ORIGIN": "https://market-fuji.bflabs.app",
+    "SETTLEMENT_X402_PERMIT2_ENABLED": "true",
+    "SETTLEMENT_LLM_SERVICES_ENABLED": "true",
+    "SETTLEMENT_LLM_PAYER_DAILY_CAP": "5000000",
+    "SETTLEMENT_LLM_GLOBAL_DAILY_CAP": "50000000",
+    "SETTLEMENT_SERVICES_REQUIRE_APPROVED": "false",
+    "SETTLEMENT_SERVICE_PROVIDER_AGENT_ID": "253",
+    "SETTLEMENT_STARTER_GAS_ENABLED": "true",
+    "SETTLEMENT_STARTER_GAS_WEI": "10000000000000000",
+    "SETTLEMENT_STARTER_GAS_DAILY_CAP_WEI": "50000000000000000",
+    "SETTLEMENT_STARTER_GAS_BALANCE_THRESHOLD_WEI": "5000000000000000"
+  },
+  "routes": [{ "pattern": "market-fuji.bflabs.app", "custom_domain": true }]
+}
