@@ -102,7 +102,8 @@ export function migrateSchema(db: Db): void {
       message TEXT NOT NULL,
       issued_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL,
-      consumed INTEGER NOT NULL DEFAULT 0
+      consumed INTEGER NOT NULL DEFAULT 0,
+      intent_json TEXT
     );
     CREATE TABLE IF NOT EXISTS order_snapshots (
       request_id TEXT PRIMARY KEY,
@@ -157,9 +158,12 @@ export function migrateSchema(db: Db): void {
       register_tx TEXT NOT NULL,
       block_number TEXT,
       created_at INTEGER NOT NULL,
+      refreshed_at INTEGER,
       PRIMARY KEY (chain_id, agent_id)
     );
     CREATE INDEX IF NOT EXISTS agents_listed ON agents(listed);
+    CREATE INDEX IF NOT EXISTS agents_owner ON agents(owner);
+    CREATE INDEX IF NOT EXISTS agents_wallet ON agents(agent_wallet);
     CREATE TABLE IF NOT EXISTS starter_gas_grants (
       address TEXT PRIMARY KEY,
       amount_wei TEXT NOT NULL,
@@ -196,6 +200,52 @@ export function migrateSchema(db: Db): void {
       UNIQUE (chain_id, payer, nonce)
     );
     CREATE INDEX IF NOT EXISTS service_payments_service ON service_payments(service_id);
+    CREATE INDEX IF NOT EXISTS service_payments_payer ON service_payments(payer, created_at);
+    -- Daily budget ceilings and the spend ledger (architecture §1). A ceiling
+    -- follows the agent: wallet holds the agentWallet last verified on chain
+    -- ('' once it was cleared).
+    CREATE TABLE IF NOT EXISTS agent_budget_ceilings (
+      chain_id INTEGER NOT NULL,
+      agent_id TEXT NOT NULL,
+      wallet TEXT NOT NULL,
+      daily_limit TEXT NOT NULL,
+      set_by TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (chain_id, agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS agent_budget_ceilings_wallet ON agent_budget_ceilings(wallet);
+    CREATE TABLE IF NOT EXISTS wallet_budgets (
+      wallet TEXT PRIMARY KEY,
+      daily_limit TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS budget_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope TEXT NOT NULL CHECK (scope IN ('ceiling', 'wallet')),
+      wallet TEXT NOT NULL,
+      agent_id TEXT,
+      daily_limit TEXT,
+      signer TEXT NOT NULL,
+      via TEXT NOT NULL CHECK (via IN ('http', 'mcp')),
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS budget_events_wallet ON budget_events(wallet, created_at);
+    -- One row per payment authorization: held before settlement, then charged or
+    -- released. day is the UTC day fixed at hold time, so a hold left behind by
+    -- an abandoned 202 stops counting at the next UTC midnight.
+    CREATE TABLE IF NOT EXISTS wallet_spend (
+      payment_key TEXT PRIMARY KEY,
+      day TEXT NOT NULL,
+      payer TEXT NOT NULL,
+      service_id TEXT NOT NULL,
+      scheme TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('held', 'charged', 'released')),
+      amount TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS wallet_spend_payer_day ON wallet_spend(payer, day);
+    CREATE INDEX IF NOT EXISTS wallet_spend_day_scheme ON wallet_spend(day, scheme);
     CREATE TABLE IF NOT EXISTS llm_daily_spend (
       day TEXT NOT NULL,
       payer TEXT NOT NULL,
@@ -207,11 +257,9 @@ export function migrateSchema(db: Db): void {
       done_at INTEGER NOT NULL
     );
   `);
-  // Older local databases predate the metered columns; add them in place so a
-  // running instance keeps its payment history.
-  const servicePaymentColumns = new Set(
-    db.query(`PRAGMA table_info(service_payments)`).all().map((row) => String(row.name)),
-  );
+  // Older local databases predate the metered columns and the budget columns;
+  // add them in place so a running instance keeps its payment history.
+  const servicePaymentColumns = tableColumnNames(db, 'service_payments');
   for (const [name, ddl] of [
     ['scheme', `TEXT NOT NULL DEFAULT 'exact'`],
     ['charged_amount', 'TEXT'],
@@ -223,6 +271,32 @@ export function migrateSchema(db: Db): void {
       db.exec(`ALTER TABLE service_payments ADD COLUMN ${name} ${ddl}`);
     }
   }
+  if (!tableColumnNames(db, 'agents').has('refreshed_at')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN refreshed_at INTEGER`);
+  }
+  if (!tableColumnNames(db, 'challenges').has('intent_json')) {
+    db.exec(`ALTER TABLE challenges ADD COLUMN intent_json TEXT`);
+  }
+  // Repeatable one-shot backfill: every payment whose money already moved
+  // becomes a charged ledger row, so the day the ledger ships already counts
+  // spend that predates it. INSERT OR IGNORE keeps restarts from double-counting.
+  db.exec(`
+    INSERT OR IGNORE INTO wallet_spend
+      (payment_key, day, payer, service_id, scheme, state, amount, created_at, updated_at)
+    SELECT payment_key,
+           strftime('%Y-%m-%d', created_at / 1000, 'unixepoch'),
+           payer, service_id, scheme, 'charged',
+           COALESCE(charged_amount, amount), created_at, updated_at
+    FROM service_payments
+    WHERE status IN ('settled', 'delivered')
+       OR (status = 'settling' AND charged_amount IS NOT NULL)
+  `);
+}
+
+function tableColumnNames(db: Db, table: string): Set<string> {
+  return new Set(
+    db.query(`PRAGMA table_info(${table})`).all().map((row) => String(row.name)),
+  );
 }
 
 // Durable Object implementation. Each exec() is an implicit transaction; the

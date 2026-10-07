@@ -1,4 +1,5 @@
 import { getAddress, isAddress, isHex } from 'viem';
+import { utcDay } from '../budget.ts';
 import type { RuntimeConfig } from '../config.ts';
 import { bazaarHttpExtension, bazaarMcpExtension } from '../discovery.ts';
 import {
@@ -75,10 +76,6 @@ function sameAddress(a: string, b: string): boolean {
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
-}
-
-function utcDay(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 // Structural parse only; signature/expiry/allowance checks live in the

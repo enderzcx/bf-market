@@ -46,6 +46,9 @@ export type AgentRecord = {
   registerTx: Hex;
   blockNumber: string | null;
   createdAt: number;
+  // Last time owner and agentWallet were re-read from the chain. Null until the
+  // first refresh; the owner console re-reads agents older than 60 seconds.
+  refreshedAt: number | null;
 };
 
 export type StarterGasStatus =
@@ -132,6 +135,64 @@ export type ServicePaymentRecord = {
   error: string | null;
   createdAt: number;
   updatedAt: number;
+};
+
+// ---- Daily budget ledger (architecture §1) ----------------------------------
+
+export type SpendScheme = 'exact' | 'upto';
+export type SpendState = 'held' | 'charged' | 'released';
+export type BudgetEventScope = 'ceiling' | 'wallet';
+export type BudgetEventVia = 'http' | 'mcp';
+
+// One row per payment authorization in `wallet_spend`.
+export type SpendRecord = {
+  paymentKey: Hex;
+  day: string;
+  payer: Address;
+  serviceId: string;
+  scheme: SpendScheme;
+  state: SpendState;
+  amount: bigint;
+  createdAt: number;
+  updatedAt: number;
+};
+
+// Occupied budget for one payer and day: charged plus still-held amounts, split
+// between all services and the metered (`upto`) ones.
+export type SpendTotals = {
+  charged: bigint;
+  held: bigint;
+  llmCharged: bigint;
+  llmHeld: bigint;
+};
+
+// Owner ceiling for one agent; `wallet` is '' once the agent has no payment
+// wallet, and the ceiling then applies to nobody.
+export type CeilingRecord = {
+  chainId: number;
+  agentId: string;
+  wallet: Address | '';
+  dailyLimit: bigint;
+  setBy: Address;
+  updatedAt: number;
+};
+
+// A payment wallet's own daily value (agent self-limit or an unregistered payer).
+export type WalletBudgetRecord = {
+  wallet: Address;
+  dailyLimit: bigint;
+  updatedAt: number;
+};
+
+export type BudgetEventRecord = {
+  id: number;
+  scope: BudgetEventScope;
+  wallet: string;
+  agentId: string | null;
+  dailyLimit: bigint | null;
+  signer: Address;
+  via: BudgetEventVia;
+  createdAt: number;
 };
 
 export type PublicX402Payment = {

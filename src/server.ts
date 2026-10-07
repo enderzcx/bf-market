@@ -1444,6 +1444,8 @@ export async function startFromEnv(env = process.env, options: { handleSignals?:
       partnerId: config.partnerId,
       partnerName: config.partnerName,
       fingerprint,
+      llmPayerDailyCapAtomic: config.llmPayerDailyCapAtomic,
+      llmGlobalDailyCapAtomic: config.llmGlobalDailyCapAtomic,
     });
     if (config.network.name !== "local") {
       await assertNetworkPreflight({

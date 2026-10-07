@@ -1,7 +1,14 @@
 import { getAddress, isAddress, keccak256, toHex } from "viem";
 import { migrateSchema, type Db } from "./db.ts";
 import { createBunDb } from "./db-bun.ts";
-import { MERCHANT_ID, PARTNER_ID, PARTNER_NAME } from "./config.ts";
+import {
+  DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC,
+  DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC,
+  MERCHANT_ID,
+  PARTNER_ID,
+  PARTNER_NAME,
+} from "./config.ts";
+import { effectiveBudget } from "./budget.ts";
 import {
   asBigInt,
   assertLedgerCap,
@@ -16,6 +23,10 @@ import {
   type AgentRecord,
   type AgentRole,
   type AuthRole,
+  type BudgetEventRecord,
+  type BudgetEventScope,
+  type BudgetEventVia,
+  type CeilingRecord,
   type Hex,
   type ListedStatus,
   type PartnerRecord,
@@ -24,8 +35,13 @@ import {
   type PublicPayout,
   type ServicePaymentRecord,
   type ServicePaymentStatus,
+  type SpendRecord,
+  type SpendScheme,
+  type SpendState,
+  type SpendTotals,
   type StarterGasRecord,
   type StarterGasStatus,
+  type WalletBudgetRecord,
   type X402PaymentStatus,
   ServiceError,
   toPublicPayout,
@@ -102,6 +118,8 @@ const SERVICE_PAYMENT_STATUSES = new Set<ServicePaymentStatus>([
   "failed",
 ]);
 
+const SPEND_STATES = new Set<SpendState>(["held", "charged", "released"]);
+
 function payoutId(merchantId: string, sourceId: string): Hex {
   return keccak256(toHex(`${merchantId}/${sourceId}`));
 }
@@ -176,6 +194,7 @@ function mapAgent(row: Record<string, unknown>): AgentRecord {
     registerTx: String(row.register_tx) as Hex,
     blockNumber: row.block_number == null ? null : String(row.block_number),
     createdAt: Number(row.created_at),
+    refreshedAt: row.refreshed_at == null ? null : Number(row.refreshed_at),
   };
 }
 
@@ -226,6 +245,60 @@ function mapServicePayment(row: Record<string, unknown>): ServicePaymentRecord {
   };
 }
 
+function mapSpend(row: Record<string, unknown>): SpendRecord {
+  const scheme = String(row.scheme);
+  const state = String(row.state);
+  if (
+    (scheme !== "exact" && scheme !== "upto") ||
+    !SPEND_STATES.has(state as SpendState)
+  ) {
+    throw new ServiceError(500, "The spend ledger row is in an unexpected state.");
+  }
+  return {
+    paymentKey: String(row.payment_key) as Hex,
+    day: String(row.day),
+    payer: String(row.payer) as Address,
+    serviceId: String(row.service_id),
+    scheme: scheme as SpendScheme,
+    state: state as SpendState,
+    amount: asBigInt(row.amount),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+function mapCeiling(row: Record<string, unknown>): CeilingRecord {
+  return {
+    chainId: Number(row.chain_id),
+    agentId: String(row.agent_id),
+    wallet: String(row.wallet) as Address | "",
+    dailyLimit: asBigInt(row.daily_limit),
+    setBy: String(row.set_by) as Address,
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+function mapWalletBudget(row: Record<string, unknown>): WalletBudgetRecord {
+  return {
+    wallet: String(row.wallet) as Address,
+    dailyLimit: asBigInt(row.daily_limit),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+function mapBudgetEvent(row: Record<string, unknown>): BudgetEventRecord {
+  return {
+    id: Number(row.id),
+    scope: String(row.scope) as BudgetEventScope,
+    wallet: String(row.wallet),
+    agentId: row.agent_id == null ? null : String(row.agent_id),
+    dailyLimit: row.daily_limit == null ? null : asBigInt(row.daily_limit),
+    signer: String(row.signer) as Address,
+    via: String(row.via) as BudgetEventVia,
+    createdAt: Number(row.created_at),
+  };
+}
+
 function mapPayout(row: Record<string, unknown>): PayoutRecord {
   const status = String(row.status);
   if (!STATUSES.has(status as PayoutStatus)) {
@@ -257,11 +330,17 @@ export function createStore(opts: {
   partnerId?: string;
   partnerName?: string;
   fingerprint?: string;
+  // Platform caps the hold path checks for metered (upto) payments. They are
+  // store options so the read-check-insert decision stays inside one transaction.
+  llmPayerDailyCapAtomic?: bigint;
+  llmGlobalDailyCapAtomic?: bigint;
 }) {
   const now = opts.now ?? Date.now;
   const merchantId = opts.merchantId ?? MERCHANT_ID;
   const partnerId = opts.partnerId ?? PARTNER_ID;
   const partnerName = opts.partnerName ?? PARTNER_NAME;
+  const payerDailyCap = opts.llmPayerDailyCapAtomic ?? DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC;
+  const globalDailyCap = opts.llmGlobalDailyCapAtomic ?? DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC;
   const db = opts.db ?? createBunDb(opts.path);
   migrateSchema(db);
   db.run(
@@ -365,6 +444,110 @@ export function createStore(opts: {
       )
       .get(agentId) as Record<string, unknown> | null;
     return row ? mapAgentDraft(row) : null;
+  };
+
+  // ---- Daily budget ledger (architecture §1) --------------------------------
+  // Every helper below takes an already-normalized address: the public methods
+  // run their inputs through `address()` first.
+
+  const getSpendRow = (paymentKey: string): SpendRecord | null => {
+    const row = db
+      .query(`SELECT * FROM wallet_spend WHERE payment_key = ?`)
+      .get(paymentKey) as Record<string, unknown> | null;
+    return row ? mapSpend(row) : null;
+  };
+
+  const getCeilingRow = (chainId: number, agentId: string): CeilingRecord | null => {
+    const row = db
+      .query(`SELECT * FROM agent_budget_ceilings WHERE chain_id = ? AND agent_id = ?`)
+      .get(chainId, agentId) as Record<string, unknown> | null;
+    return row ? mapCeiling(row) : null;
+  };
+
+  const listCeilingRows = (wallet: string): CeilingRecord[] => {
+    const rows = db
+      .query(
+        `SELECT * FROM agent_budget_ceilings WHERE wallet = ?
+         ORDER BY chain_id ASC, CAST(agent_id AS INTEGER) ASC`,
+      )
+      .all(wallet) as Record<string, unknown>[];
+    return rows.map(mapCeiling);
+  };
+
+  const getWalletBudgetRow = (wallet: string): WalletBudgetRecord | null => {
+    const row = db
+      .query(`SELECT * FROM wallet_budgets WHERE wallet = ?`)
+      .get(wallet) as Record<string, unknown> | null;
+    return row ? mapWalletBudget(row) : null;
+  };
+
+  // Occupied budget for one payer and day. Held and charged rows both count; a
+  // released row never does. Only metered (upto) rows feed the platform caps.
+  const spendTotalsRow = (payer: string, day: string): SpendTotals => {
+    const row = db
+      .query(
+        `SELECT
+           CAST(COALESCE(SUM(CASE WHEN state = 'charged' THEN CAST(amount AS INTEGER) ELSE 0 END), 0) AS TEXT) AS charged,
+           CAST(COALESCE(SUM(CASE WHEN state = 'held' THEN CAST(amount AS INTEGER) ELSE 0 END), 0) AS TEXT) AS held,
+           CAST(COALESCE(SUM(CASE WHEN scheme = 'upto' AND state = 'charged' THEN CAST(amount AS INTEGER) ELSE 0 END), 0) AS TEXT) AS llm_charged,
+           CAST(COALESCE(SUM(CASE WHEN scheme = 'upto' AND state = 'held' THEN CAST(amount AS INTEGER) ELSE 0 END), 0) AS TEXT) AS llm_held
+         FROM wallet_spend WHERE payer = ? AND day = ?`,
+      )
+      .get(payer, day) as Record<string, unknown> | null;
+    return {
+      charged: asBigInt(row?.charged ?? 0),
+      held: asBigInt(row?.held ?? 0),
+      llmCharged: asBigInt(row?.llm_charged ?? 0),
+      llmHeld: asBigInt(row?.llm_held ?? 0),
+    };
+  };
+
+  const uptoSpendForDay = (day: string): bigint => {
+    const row = db
+      .query(
+        `SELECT CAST(COALESCE(SUM(CAST(amount AS INTEGER)), 0) AS TEXT) AS total
+         FROM wallet_spend
+         WHERE day = ? AND scheme = 'upto' AND state IN ('held', 'charged')`,
+      )
+      .get(day) as Record<string, unknown> | null;
+    return asBigInt(row?.total ?? 0);
+  };
+
+  const minCeiling = (ceilings: readonly CeilingRecord[]): bigint | null => {
+    let min: bigint | null = null;
+    for (const ceiling of ceilings) {
+      if (min === null || ceiling.dailyLimit < min) min = ceiling.dailyLimit;
+    }
+    return min;
+  };
+
+  const appendBudgetEvent = (input: {
+    scope: BudgetEventScope;
+    wallet: string;
+    agentId: string | null;
+    dailyLimit: bigint | null;
+    signer: Address;
+    via: BudgetEventVia;
+    at: number;
+  }) => {
+    db.run(
+      `INSERT INTO budget_events (scope, wallet, agent_id, daily_limit, signer, via, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.scope,
+        input.wallet.toLowerCase(),
+        input.agentId,
+        input.dailyLimit === null ? null : input.dailyLimit.toString(),
+        input.signer,
+        input.via,
+        input.at,
+      ],
+    );
+  };
+
+  const requireLimit = (value: bigint): bigint => {
+    if (value < 0n) throw new ServiceError(500, "账本金额异常。");
+    return value;
   };
 
   // Row-level writers shared by the public mutations and the one-shot seed
@@ -1347,6 +1530,31 @@ export function createStore(opts: {
     }): AgentRecord {
       return tx(() => upsertAgentRow(input));
     },
+    // Write back the chain-verified owner and agentWallet for an agent that is
+    // already in the database. Never inserts: an agent registered outside this
+    // platform has no row to refresh (architecture N3).
+    refreshAgentChainState(
+      chainId: number,
+      agentId: string,
+      owner: Address,
+      wallet: Address | "",
+      at?: number,
+    ): boolean {
+      return tx(() => {
+        const result = db.run(
+          `UPDATE agents SET owner = ?, agent_wallet = ?, refreshed_at = ?
+           WHERE chain_id = ? AND agent_id = ?`,
+          [
+            address(owner, "代理所有者地址"),
+            wallet === "" ? "" : address(wallet, "付款钱包地址"),
+            at ?? now(),
+            chainId,
+            agentId,
+          ],
+        );
+        return result.changes === 1;
+      });
+    },
     getAgent,
     listAgents(filter?: { role?: AgentRole; listed?: ListedStatus }): AgentRecord[] {
       const clauses: string[] = [];
@@ -1588,6 +1796,263 @@ export function createStore(opts: {
            ON CONFLICT(day, payer) DO UPDATE SET charged = excluded.charged`,
           [day, owner, next.toString()],
         );
+      });
+    },
+    // ---- Daily budget ledger (architecture §1) ------------------------------
+    // Hold the price (exact) or the quote upper bound (upto) for one payment
+    // authorization. Idempotent per paymentKey: a retry gets the row it already
+    // owns and does not re-check any limit. Otherwise the limits, the platform
+    // caps and the insert are decided inside one transaction with no `await`, so
+    // two concurrent calls from the same payer cannot both pass.
+    holdSpend(input: {
+      paymentKey: string;
+      day: string;
+      payer: Address;
+      serviceId: string;
+      scheme: SpendScheme;
+      amount: bigint;
+      createdAt?: number;
+    }): SpendRecord {
+      const payer = address(input.payer, "付款地址");
+      const amount = requireLimit(input.amount);
+      if (input.scheme !== "exact" && input.scheme !== "upto") {
+        throw new ServiceError(500, "The spend ledger row is in an unexpected state.");
+      }
+      return tx(() => {
+        const existing = getSpendRow(input.paymentKey);
+        if (existing) return existing;
+        const at = input.createdAt ?? now();
+        const totals = spendTotalsRow(payer, input.day);
+        const used = totals.charged + totals.held;
+        const ceiling = minCeiling(listCeilingRows(payer));
+        const own = getWalletBudgetRow(payer)?.dailyLimit ?? null;
+        // Checked owner limit first, then the wallet's own value, matching the
+        // order in architecture §2.5.
+        if (ceiling !== null && used + amount > ceiling) {
+          throw new ServiceError(429, "Daily budget set by the agent owner is reached.");
+        }
+        if (own !== null && used + amount > own) {
+          throw new ServiceError(429, "Daily budget reached for this wallet.");
+        }
+        if (input.scheme === "upto") {
+          if (totals.llmCharged + totals.llmHeld + amount > payerDailyCap) {
+            throw new ServiceError(429, "Daily spending limit reached for this payer.");
+          }
+          if (uptoSpendForDay(input.day) + amount > globalDailyCap) {
+            throw new ServiceError(429, "The daily model budget is exhausted.");
+          }
+        }
+        db.run(
+          `INSERT INTO wallet_spend (payment_key, day, payer, service_id, scheme, state, amount, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'held', ?, ?, ?)`,
+          [
+            input.paymentKey,
+            input.day,
+            payer,
+            input.serviceId,
+            input.scheme,
+            amount.toString(),
+            at,
+            at,
+          ],
+        );
+        return getSpendRow(input.paymentKey)!;
+      });
+    },
+    // Shrink a hold to the actual usage before settlement.
+    adjustHold(paymentKey: string, amount: bigint, opts?: { at?: number }): SpendRecord {
+      const next = requireLimit(amount);
+      return tx(() => {
+        const result = db.run(
+          `UPDATE wallet_spend SET amount = ?, updated_at = ?
+           WHERE payment_key = ? AND state = 'held'`,
+          [next.toString(), opts?.at ?? now(), paymentKey],
+        );
+        if (result.changes !== 1) {
+          throw new ServiceError(409, "The spend hold is in an unexpected state.");
+        }
+        return getSpendRow(paymentKey)!;
+      });
+    },
+    // Settle a hold at the actual charge. Repeating the same charge is allowed so
+    // a retried settlement callback cannot fail on its own bookkeeping.
+    chargeSpend(paymentKey: string, amount: bigint, opts?: { at?: number }): SpendRecord {
+      const next = requireLimit(amount);
+      return tx(() => {
+        const result = db.run(
+          `UPDATE wallet_spend SET state = 'charged', amount = ?, updated_at = ?
+           WHERE payment_key = ? AND state IN ('held', 'charged')`,
+          [next.toString(), opts?.at ?? now(), paymentKey],
+        );
+        if (result.changes !== 1) {
+          throw new ServiceError(409, "The spend hold is in an unexpected state.");
+        }
+        return getSpendRow(paymentKey)!;
+      });
+    },
+    // Give the budget back when nothing was settled. Releasing twice is a no-op.
+    releaseSpend(paymentKey: string, opts?: { at?: number }): SpendRecord {
+      return tx(() => {
+        const result = db.run(
+          `UPDATE wallet_spend SET state = 'released', updated_at = ?
+           WHERE payment_key = ? AND state = 'held'`,
+          [opts?.at ?? now(), paymentKey],
+        );
+        if (result.changes === 1) return getSpendRow(paymentKey)!;
+        const row = getSpendRow(paymentKey);
+        if (row && row.state === "released") return row;
+        throw new ServiceError(409, "The spend hold is in an unexpected state.");
+      });
+    },
+    getSpend: getSpendRow,
+    spendFor(payer: Address, day: string): SpendTotals {
+      return spendTotalsRow(address(payer, "付款地址"), day);
+    },
+    // Effective daily budget of one payment wallet: the smallest of every ceiling
+    // naming it and its own value. `undefined` means no user budget is set.
+    getUserLimit(wallet: Address): bigint | undefined {
+      const target = address(wallet, "钱包地址");
+      const effective = effectiveBudget({
+        ceilings: listCeilingRows(target).map((ceiling) => ceiling.dailyLimit),
+        own: getWalletBudgetRow(target)?.dailyLimit ?? null,
+      });
+      return effective?.limit;
+    },
+    listCeilingsForWallet(wallet: Address): CeilingRecord[] {
+      return listCeilingRows(address(wallet, "钱包地址"));
+    },
+    getCeiling: getCeilingRow,
+    getWalletBudget(wallet: Address): WalletBudgetRecord | null {
+      return getWalletBudgetRow(address(wallet, "钱包地址"));
+    },
+    listBudgetEvents(wallet: Address, limit = 20): BudgetEventRecord[] {
+      const rows = db
+        .query(
+          `SELECT * FROM budget_events WHERE wallet = ? ORDER BY id DESC LIMIT ?`,
+        )
+        .all(address(wallet, "钱包地址").toLowerCase(), limit) as Record<string, unknown>[];
+      return rows.map(mapBudgetEvent);
+    },
+    // Owner ceiling for one agent. Writing it never rewrites the wallet's own
+    // value: the effective limit is the smaller of the two at execution time.
+    setCeiling(input: {
+      chainId: number;
+      agentId: string;
+      wallet: Address;
+      dailyLimit: bigint;
+      signer: Address;
+      via: BudgetEventVia;
+      at?: number;
+    }): CeilingRecord {
+      const wallet = address(input.wallet, "付款钱包地址");
+      const signer = address(input.signer, "签名人地址");
+      const dailyLimit = requireLimit(input.dailyLimit);
+      const at = input.at ?? now();
+      return tx(() => {
+        db.run(
+          `INSERT INTO agent_budget_ceilings (chain_id, agent_id, wallet, daily_limit, set_by, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(chain_id, agent_id) DO UPDATE SET
+             wallet = excluded.wallet,
+             daily_limit = excluded.daily_limit,
+             set_by = excluded.set_by,
+             updated_at = excluded.updated_at`,
+          [input.chainId, input.agentId, wallet, dailyLimit.toString(), signer, at],
+        );
+        appendBudgetEvent({
+          scope: "ceiling",
+          wallet,
+          agentId: input.agentId,
+          dailyLimit,
+          signer,
+          via: input.via,
+          at,
+        });
+        return getCeilingRow(input.chainId, input.agentId)!;
+      });
+    },
+    removeCeiling(input: {
+      chainId: number;
+      agentId: string;
+      signer: Address;
+      via: BudgetEventVia;
+      at?: number;
+    }): CeilingRecord | null {
+      const signer = address(input.signer, "签名人地址");
+      const at = input.at ?? now();
+      return tx(() => {
+        const existing = getCeilingRow(input.chainId, input.agentId);
+        if (!existing) return null;
+        db.run(`DELETE FROM agent_budget_ceilings WHERE chain_id = ? AND agent_id = ?`, [
+          input.chainId,
+          input.agentId,
+        ]);
+        appendBudgetEvent({
+          scope: "ceiling",
+          wallet: existing.wallet,
+          agentId: existing.agentId,
+          dailyLimit: null,
+          signer,
+          via: input.via,
+          at,
+        });
+        return existing;
+      });
+    },
+    setOwnBudget(input: {
+      wallet: Address;
+      dailyLimit: bigint;
+      signer: Address;
+      via: BudgetEventVia;
+      at?: number;
+    }): WalletBudgetRecord {
+      const wallet = address(input.wallet, "钱包地址");
+      const signer = address(input.signer, "签名人地址");
+      const dailyLimit = requireLimit(input.dailyLimit);
+      const at = input.at ?? now();
+      return tx(() => {
+        db.run(
+          `INSERT INTO wallet_budgets (wallet, daily_limit, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(wallet) DO UPDATE SET
+             daily_limit = excluded.daily_limit,
+             updated_at = excluded.updated_at`,
+          [wallet, dailyLimit.toString(), at],
+        );
+        appendBudgetEvent({
+          scope: "wallet",
+          wallet,
+          agentId: null,
+          dailyLimit,
+          signer,
+          via: input.via,
+          at,
+        });
+        return getWalletBudgetRow(wallet)!;
+      });
+    },
+    removeOwnBudget(input: {
+      wallet: Address;
+      signer: Address;
+      via: BudgetEventVia;
+      at?: number;
+    }): WalletBudgetRecord | null {
+      const wallet = address(input.wallet, "钱包地址");
+      const signer = address(input.signer, "签名人地址");
+      const at = input.at ?? now();
+      return tx(() => {
+        const existing = getWalletBudgetRow(wallet);
+        if (!existing) return null;
+        db.run(`DELETE FROM wallet_budgets WHERE wallet = ?`, [wallet]);
+        appendBudgetEvent({
+          scope: "wallet",
+          wallet,
+          agentId: null,
+          dailyLimit: null,
+          signer,
+          via: input.via,
+          at,
+        });
+        return existing;
       });
     },
     seedState(): { seeded: boolean; agents: number; drafts: number } {

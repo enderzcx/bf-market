@@ -30,6 +30,9 @@ export const DEFAULT_X402_FACILITATOR_URL = 'https://facilitator.payai.network';
 export const DEFAULT_BEEFAPI_LLM_BASE_URL = 'https://global.beefapi.com';
 export const DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC = 5_000_000n;
 export const DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC = 50_000_000n;
+// Ceiling for any user-set daily budget (architecture decision N1). Kept equal
+// to the LLM per-wallet cap for now; it can be tuned independently later.
+export const DEFAULT_SETTLEMENT_BUDGET_MAX_ATOMIC = 5_000_000n;
 export const X402_MAX_TIMEOUT_SECONDS = 300;
 export const X402_HEADER_LIMIT = 8 * 1024;
 
@@ -110,6 +113,9 @@ export type RuntimeConfig = {
   // Per-payer and global daily caps on actual charges, in USDT atomic units.
   llmPayerDailyCapAtomic: bigint;
   llmGlobalDailyCapAtomic: bigint;
+  // Upper bound on any user-set daily budget (owner ceiling or wallet value),
+  // in USDT atomic units. `0` pauses paid calls.
+  settlementBudgetMaxAtomic: bigint;
   // Upstream BeefAPI request timeout. Defaults to 60s; tests shorten it.
   llmRequestTimeoutMs: number;
 };
@@ -498,6 +504,8 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     partial.llmPayerDailyCapAtomic ?? DEFAULT_LLM_PAYER_DAILY_CAP_ATOMIC;
   const llmGlobalDailyCapAtomic =
     partial.llmGlobalDailyCapAtomic ?? DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC;
+  const settlementBudgetMaxAtomic =
+    partial.settlementBudgetMaxAtomic ?? DEFAULT_SETTLEMENT_BUDGET_MAX_ATOMIC;
   const llmRequestTimeoutMs = partial.llmRequestTimeoutMs ?? 60_000;
 
   return {
@@ -560,6 +568,7 @@ export function runtimeConfig(partial: RuntimeConfigInput): RuntimeConfig {
     llmBeefapiApiKey,
     llmPayerDailyCapAtomic,
     llmGlobalDailyCapAtomic,
+    settlementBudgetMaxAtomic,
     llmRequestTimeoutMs,
   };
 }
@@ -776,6 +785,10 @@ export function loadConfig(opts?: {
       env.SETTLEMENT_LLM_GLOBAL_DAILY_CAP,
       'SETTLEMENT_LLM_GLOBAL_DAILY_CAP',
     ) ?? DEFAULT_LLM_GLOBAL_DAILY_CAP_ATOMIC,
+    settlementBudgetMaxAtomic: weiEnv(
+      env.SETTLEMENT_BUDGET_MAX,
+      'SETTLEMENT_BUDGET_MAX',
+    ) ?? DEFAULT_SETTLEMENT_BUDGET_MAX_ATOMIC,
   });
 
   if (cfg.source === 'beefapi') {

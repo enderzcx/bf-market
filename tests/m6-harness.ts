@@ -297,6 +297,8 @@ export function buildApp(
   const store = createStore({
     path: join(dir, 'db.sqlite'),
     fingerprint: runtimeFingerprint(config),
+    llmPayerDailyCapAtomic: config.llmPayerDailyCapAtomic,
+    llmGlobalDailyCapAtomic: config.llmGlobalDailyCapAtomic,
   });
   closers.push(() => store.close());
   const chain = new MockPayoutChain();

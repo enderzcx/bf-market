@@ -32,6 +32,8 @@ export class Ledger extends DurableObject<Env> {
       path: ':memory:',
       db,
       fingerprint: runtimeFingerprint(config),
+      llmPayerDailyCapAtomic: config.llmPayerDailyCapAtomic,
+      llmGlobalDailyCapAtomic: config.llmGlobalDailyCapAtomic,
     });
     // botchain-testnet has no Settlement payout contract, so the payout chain is
     // disabled and the Fuji payout worker is never started in the Worker entry.
