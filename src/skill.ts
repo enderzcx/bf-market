@@ -1,4 +1,5 @@
 import type { RuntimeConfig } from './config.ts';
+import { budgetMax } from './budget.ts';
 import {
   LLM_DEFAULT_MAX_TOKENS,
   LLM_MAX_CONTENT_CHARS,
@@ -93,6 +94,7 @@ export function buildSkillMarkdown(input: {
   const registry = config.identityRegistry ?? '(no identity registry on this network)';
   const payerDaily = formatUsdt(config.llmPayerDailyCapAtomic);
   const globalDaily = formatUsdt(config.llmGlobalDailyCapAtomic);
+  const budgetCeiling = formatUsdt(budgetMax(config));
 
   const starterGas = config.starterGasEnabled
     ? [
@@ -254,6 +256,8 @@ The MCP entry point is a Streamable HTTP server at \`${origin}/mcp\`. Tools:
 - \`get_service\` - one service's input and output schemas plus payment requirements.
 - \`call_service\` - call a paid service. Without a payment it returns the payment requirements; build the payment payload exactly as in section 2 and retry with it in \`_meta["x402/payment"]\`. The output comes back as \`structuredContent\` (no \`result\` wrapper) and the settlement in \`_meta["x402/payment-response"]\`.
 - \`register_agent_info\` - the ERC-8004 registration steps.
+- \`get_wallet_summary\` - a payment wallet's daily budget, today's spend, remaining budget and recent receipts.
+- \`set_wallet_budget\` - read the daily budget challenge, then submit a signed change to the owner ceiling or the wallet's own value.
 
 Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):
 
@@ -272,11 +276,38 @@ Client configuration (Claude Desktop, Cursor and other Streamable HTTP clients):
 
 Quote per call for a metered service: \`ceil(${LLM_QUOTE_INPUT_TOKENS} input tokens x input_price) + ceil(${LLM_QUOTE_OUTPUT_TOKENS} output tokens x output_price)\`, the same fixed maximum for every request. Upstream models add hidden prompt tokens that the request does not show, so the quote sits above a typical call; with \`upto\` only the actual usage is charged, so the maximum costs nothing extra. The "Quote per call (max)" column shows it per model, and the 402 \`amount\` is that same fixed quote.
 
-Daily limits, read from config: at most ${payerDaily} USDT per wallet and ${globalDaily} USDT platform-wide per UTC day. Hitting either returns \`429\` with \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\`, and nothing is settled.
+Daily LLM limits, read from config, apply to LLM (metered) services only: at most ${payerDaily} USDT per wallet and ${globalDaily} USDT platform-wide per UTC day, counting metered spend only. Hitting either returns \`429\` with \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\`, and nothing is settled. \`echo\` is a fixed-price service and has no platform daily limit.
 
 ${serviceTable(catalog)}
 
-## 7. Errors and troubleshooting
+## 7. Daily budget
+
+A payment wallet can carry a daily budget that applies to every paid service, including \`echo\`. The effective budget for a wallet is the smaller of two values:
+
+- the owner's ceiling: a per-agent limit set by the ERC-8004 owner, applied to that agent's payment wallet;
+- the wallet's own value: a limit the payment wallet sets for itself.
+
+When neither is set there is no user budget: \`echo\` then has no daily limit and the LLM services are bounded only by the platform limits in section 6. A value of \`0\` pauses every paid call for that wallet. Every user value is at most ${budgetCeiling} USDT.
+
+Rules:
+
+- The payment wallet may only set a value at or below the owner's ceiling. A larger value is rejected with \`The daily budget exceeds the owner's limit of <amount> USDT.\`
+- Lowering the ceiling does not overwrite the wallet's stored value; the effective budget just drops to the ceiling until the ceiling is raised or removed.
+- Calls are admitted against the quoted maximum per call, so a model whose fixed quote is above the remaining budget cannot be called today while a cheaper model still can. After settlement only the actual usage counts.
+- The budget changes apply immediately; a hold already taken by an in-flight call keeps its amount.
+
+Read the current state with \`GET ${origin}/api/wallets/{address}/summary\`: \`userBudget.effective\` and \`userBudget.source\` show the limit in force, and \`spent\` and \`remaining\` show today's usage.
+
+Set a budget with a two-step wallet signature: an EIP-191 \`personal_sign\` over a server-issued challenge, valid 5 minutes and single use.
+
+1. \`POST ${origin}/api/budgets/challenge\` with \`{ "scope": "wallet", "wallet": "0x...", "signer": "0x...", "dailyLimit": "30000" }\` and read \`message\`. Use \`"scope": "ceiling"\` together with \`"agentId"\` for an owner setting the ceiling, and \`"dailyLimit": null\` to remove a value.
+2. Sign \`message\` with the named signer, then \`POST ${origin}/api/budgets\` with the same body plus \`"signature"\`. The reply is the wallet summary.
+
+Over MCP the same flow is \`set_wallet_budget\` with the same arguments: call it without \`signature\` to get the challenge, then call it again with \`signer\` and \`signature\` to submit.
+
+A rejected budget change returns an English error with the reason, for example \`The signer is not allowed to set this budget.\` or \`Invalid daily budget.\`
+
+## 8. Errors and troubleshooting
 
 - \`PAYMENT-SIGNATURE header is required\` - send the signed payment in the \`PAYMENT-SIGNATURE\` header.
 - \`Buyer has not approved Permit2, or the allowance is too low.\` - send the one-time Permit2 approve for ${asset.symbol} first.
@@ -287,11 +318,13 @@ ${serviceTable(catalog)}
 - \`Payment amount does not match the requirements.\` - use the amount from the 402 unchanged.
 - \`Payment facilitator does not match this server.\` - sign the \`extra.facilitatorAddress\` from the 402 into the witness.
 - \`Payment spender is not the x402 Permit2 proxy.\` - use the spender and proxy from \`extra\` in the 402.
-- \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\` - the per-day cap is spent; retry after the next UTC day.
+- \`Daily spending limit reached for this payer.\` or \`The daily model budget is exhausted.\` - the platform per-day LLM cap is spent; retry after the next UTC day.
+- \`Daily budget set by the agent owner is reached.\` - the owner's daily ceiling for this wallet is spent; retry after the next UTC day.
+- \`Daily budget reached for this wallet.\` - the wallet's own daily budget is spent; retry after the next UTC day.
 - \`The model provider call failed. You were not charged.\` - retry; nothing was settled.
 - \`This service is temporarily unavailable.\` - the provider is not registered or approved yet.
 
-## 8. Testnet notice and safety
+## 9. Testnet notice and safety
 
 - This is ${net.displayName}. Test ${asset.symbol} and tBOT have no real value.
 - The platform never asks for your private key. Never send a private key to anyone.
@@ -313,6 +346,7 @@ export function buildLlmsTxt(input: { origin: string }): string {
 - Service catalog: ${origin}/discovery/resources
 - Service search: ${origin}/discovery/search
 - MCP endpoint (Streamable HTTP): ${origin}/mcp
+- Daily budget: read ${origin}/api/wallets/{address}/summary, change it with ${origin}/api/budgets
 - Receipts: ${origin}/api/receipts?payer=0x...
 - Public stats: ${origin}/api/stats/public
 `;

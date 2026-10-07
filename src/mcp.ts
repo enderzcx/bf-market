@@ -1,5 +1,7 @@
 import { BODY_LIMIT } from './config.ts';
 import type { RuntimeConfig } from './config.ts';
+import { parseAddress } from './auth.ts';
+import type { BudgetService } from './budget.ts';
 import type { ServiceDiscovery } from './discovery.ts';
 import { ServiceError, sanitizeError } from './types.ts';
 import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from './x402/codec.ts';
@@ -114,6 +116,9 @@ export function createMcpEndpoint(opts: {
   config: RuntimeConfig;
   permit2Service: Permit2Service | null;
   discovery: ServiceDiscovery | null;
+  // The signed budget write and the wallet summary, shared with the HTTP
+  // routes so the two agent surfaces cannot drift.
+  budgets?: BudgetService | null;
 }) {
   const registry = opts.config.identityRegistry;
   // Set on each request so platform/registration text can reference the origin.
@@ -180,6 +185,54 @@ export function createMcpEndpoint(opts: {
       description:
         'Explain how to register an on-chain identity (ERC-8004). Returns the endpoint usage, chain ID, and registry address. The platform never signs transactions for you.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    },
+    {
+      name: 'get_wallet_summary',
+      description:
+        "Read one payment wallet's daily budget, today's spend, remaining budget and recent receipts.",
+      inputSchema: {
+        type: 'object',
+        properties: { wallet: { type: 'string', description: 'Payment wallet address.' } },
+        required: ['wallet'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'set_wallet_budget',
+      description:
+        "Change a wallet's daily budget. Call it without a signature to get the challenge message, then call it again with the signer and signature to submit. scope 'wallet' sets the payment wallet's own value; scope 'ceiling' sets the owner's limit for one agent.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          wallet: {
+            type: 'string',
+            description: 'Payment wallet address the daily budget applies to.',
+          },
+          dailyLimit: {
+            type: ['string', 'null'],
+            description: 'New daily limit in atomic USDT, or null to remove the limit.',
+          },
+          scope: {
+            type: 'string',
+            enum: ['wallet', 'ceiling'],
+            description: "What to set. Defaults to 'wallet'.",
+          },
+          agentId: {
+            type: 'string',
+            description: "The agent whose ceiling is set; required when scope is 'ceiling'.",
+          },
+          signer: {
+            type: 'string',
+            description: "Address that signs. Defaults to the wallet when scope is 'wallet'.",
+          },
+          signature: {
+            type: 'string',
+            description: 'EIP-191 personal_sign signature over the challenge message.',
+          },
+        },
+        required: ['wallet', 'dailyLimit'],
+        additionalProperties: false,
+      },
     },
   ];
 
@@ -346,6 +399,32 @@ export function createMcpEndpoint(opts: {
 
       case 'register_agent_info':
         return text(registerText(), { structuredContent: registerStructured() });
+
+      case 'get_wallet_summary': {
+        if (!opts.budgets) return toolError('Wallet budgets are not enabled.');
+        const wallet = optionalString(args.wallet);
+        if (!wallet) throw new ServiceError(400, 'Invalid wallet address.');
+        return jsonText(opts.budgets.summary(parseAddress(wallet)));
+      }
+
+      case 'set_wallet_budget': {
+        if (!opts.budgets) return toolError('Wallet budgets are not enabled.');
+        const scope = optionalString(args.scope) ?? 'wallet';
+        const wallet = optionalString(args.wallet);
+        // The payment wallet signs its own value, so a missing signer defaults
+        // to the wallet there; a ceiling always names the owner explicitly.
+        const signer = optionalString(args.signer) ?? (scope === 'wallet' ? wallet : undefined);
+        const intent: Record<string, unknown> = {
+          scope,
+          wallet,
+          signer,
+          dailyLimit: args.dailyLimit ?? null,
+        };
+        if (scope === 'ceiling') intent.agentId = optionalString(args.agentId);
+        const signature = optionalString(args.signature);
+        if (!signature) return jsonText(opts.budgets.issueChallenge(intent, originRef));
+        return jsonText(await opts.budgets.submit({ ...intent, signature }, 'mcp'));
+      }
 
       default:
         throw new ServiceError(400, `Unknown tool: ${String(name)}`);

@@ -427,3 +427,82 @@ test('receipts expose a block explorer link when the network has one', async () 
   expect(md).toContain('chain 968');
   expect(md).toContain(BOTCHAIN_USDT);
 });
+
+test('skill.md explains the daily budget and the two-step signing flow', async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, { llmServicesEnabled: true, llmBeefapiApiKey: BEEFAPI_KEY });
+  await registerProvider(app, env, privateKeyToAccount(AGENT_KEY));
+
+  const md = await (await req(app, '/skill.md')).text();
+
+  // A section titled "Daily budget".
+  expect(md).toMatch(/^## \d+\. Daily budget$/m);
+
+  // Effective value: the smaller of the owner ceiling and the wallet's value.
+  expect(md).toContain('is the smaller of two values');
+  expect(md).toContain("the owner's ceiling");
+  expect(md).toContain("the wallet's own value");
+
+  // It covers every paid service, including echo.
+  expect(md).toContain('every paid service, including `echo`');
+
+  // The payment wallet may only set a value at or below the owner's ceiling.
+  expect(md).toContain("at or below the owner's ceiling");
+
+  // Admission uses the quoted maximum per call.
+  expect(md).toContain('quoted maximum per call');
+
+  // Two-step signing, both over HTTP and over MCP.
+  expect(md).toContain(`${app.origin}/api/budgets/challenge`);
+  expect(md).toContain(`${app.origin}/api/budgets`);
+  expect(md).toContain('set_wallet_budget');
+  expect(md).toContain('personal_sign');
+
+  // Reading the current state.
+  expect(md).toContain(`${app.origin}/api/wallets/{address}/summary`);
+
+  // Both new 429 texts, and the existing two stay verbatim.
+  expect(md).toContain('Daily budget set by the agent owner is reached.');
+  expect(md).toContain('Daily budget reached for this wallet.');
+  expect(md).toContain('Daily spending limit reached for this payer.');
+  expect(md).toContain('The daily model budget is exhausted.');
+
+  // The MCP tool list carries both budget tools.
+  expect(md).toContain('`get_wallet_summary`');
+  expect(md).toContain('`set_wallet_budget`');
+
+  // Every word the agent reads stays English.
+  expect(md).not.toMatch(/[\u4e00-\u9fff]/);
+});
+
+test('skill.md scopes the platform daily limits to LLM services only', async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, { llmServicesEnabled: true, llmBeefapiApiKey: BEEFAPI_KEY });
+  await registerProvider(app, env, privateKeyToAccount(AGENT_KEY));
+
+  const md = await (await req(app, '/skill.md')).text();
+
+  expect(md).toContain('apply to LLM (metered) services only');
+  expect(md).toContain('at most 5.00 USDT per wallet and 50.00 USDT platform-wide');
+  // Echo is never described as covered by the platform caps.
+  expect(md).not.toMatch(/echo[^.]*platform(-| )wide/i);
+});
+
+test('llms.txt lists the daily budget entry points', async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, { agentOrigin: 'https://market.example' });
+
+  const res = await req(app, '/llms.txt');
+  expect(res.status).toBe(200);
+  const txt = await res.text();
+
+  expect(txt).toContain('https://market.example/api/wallets/{address}/summary');
+  expect(txt).toContain('https://market.example/api/budgets');
+  // The existing lines stay.
+  expect(txt).toContain('https://market.example/skill.md');
+  expect(txt).toContain('https://market.example/discovery/resources');
+  expect(txt).toContain('https://market.example/mcp');
+  expect(txt).toContain('https://market.example/api/receipts?payer=0x...');
+  expect(txt).toContain('https://market.example/api/stats/public');
+});
+

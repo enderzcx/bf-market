@@ -1,6 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
-import { getAddress } from 'viem';
+import { getAddress, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import type { AgentRegistryChain } from '../src/agent-registry.ts';
+import type { SettlementApp } from '../src/server.ts';
 import { decodePaymentRequiredHeader } from '../src/x402/index.ts';
 import {
   AGENT_KEY,
@@ -42,6 +44,34 @@ async function listTools(client: ReturnType<typeof createMcpClient>): Promise<To
   return (res.result as { tools: ToolDef[] }).tools;
 }
 
+// A stub registry keeps the budget-tool tests off a chain round trip while
+// still exercising the owner/wallet identity rules the real registry enforces.
+function stubRegistry(entries: Record<string, { owner: Address; wallet: Address }> = {}) {
+  const state = new Map(Object.entries(entries));
+  const chain: AgentRegistryChain = {
+    async getChainId() {
+      return 31337;
+    },
+    async getFinalizedReceipt() {
+      return null;
+    },
+    async readOwnerOf(agentId) {
+      const entry = state.get(String(agentId));
+      if (!entry) throw new Error('agent not found');
+      return entry.owner;
+    },
+    async readAgentWallet(agentId) {
+      const entry = state.get(String(agentId));
+      if (!entry) throw new Error('agent not found');
+      return entry.wallet;
+    },
+  };
+  return chain;
+}
+
+const walletSummaryOf = async (app: SettlementApp, address: string) =>
+  (await (await req(app, `/api/wallets/${address}/summary`)).json()) as Record<string, any>;
+
 test('initialize and tools/list expose the tool set and schemas', async () => {
   const env = await startChain();
   const { app } = buildApp(env);
@@ -66,9 +96,11 @@ test('initialize and tools/list expose the tool set and schemas', async () => {
   expect(tools.map((t) => t.name).sort()).toEqual([
     'call_service',
     'get_service',
+    'get_wallet_summary',
     'platform_info',
     'register_agent_info',
     'search_services',
+    'set_wallet_budget',
   ]);
   for (const tool of tools) {
     expect(tool.description.length).toBeGreaterThan(0);
@@ -79,6 +111,17 @@ test('initialize and tools/list expose the tool set and schemas', async () => {
   expect(call.inputSchema.properties?.serviceId).toBeDefined();
   const get = tools.find((t) => t.name === 'get_service')!;
   expect(get.inputSchema.required).toEqual(['serviceId']);
+
+  // The two budget tools: the summary reader takes a wallet, and the writer
+  // takes the intent plus the two-step signature.
+  const summaryTool = tools.find((t) => t.name === 'get_wallet_summary')!;
+  expect(summaryTool.inputSchema.required).toEqual(['wallet']);
+  expect(summaryTool.inputSchema.properties?.wallet).toBeDefined();
+  const budgetTool = tools.find((t) => t.name === 'set_wallet_budget')!;
+  expect(budgetTool.inputSchema.required).toEqual(['wallet', 'dailyLimit']);
+  for (const name of ['wallet', 'dailyLimit', 'scope', 'agentId', 'signer', 'signature']) {
+    expect(budgetTool.inputSchema.properties?.[name]).toBeDefined();
+  }
 
   // Streamable HTTP: GET is not supported, DELETE terminates the session.
   const getRes = await req(app, '/mcp', { method: 'GET' });
@@ -294,3 +337,198 @@ test('the same payment over HTTP and MCP settles and delivers only once', async 
   expect(await env.client.getTransactionCount({ address: opsAddress })).toBe(opsBefore + 1);
   expect(await balanceOf(env, agent.address)).toBe(payToBefore + PRICE);
 });
+
+// ---- Budget tools (VAL-AGENT-001..005) -------------------------------------
+
+const budgetOwner = privateKeyToAccount(`0x${'c'.repeat(64)}` as Hex);
+const budgetWallet = privateKeyToAccount(`0x${'d'.repeat(64)}` as Hex);
+
+test('get_wallet_summary matches the HTTP wallet summary', async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, { agentRegistryChain: stubRegistry() });
+  const client = createMcpClient(app);
+  const wallet = getAddress(`0x${'a'.repeat(40)}`);
+
+  const tool = (await client.call('get_wallet_summary', { wallet })).result as ToolResult;
+  expect(tool.isError).toBeUndefined();
+  const viaTool = tool.structuredContent as Record<string, unknown>;
+  const http = await walletSummaryOf(app, wallet);
+  for (const key of ['wallet', 'day', 'userBudget', 'platform', 'spent', 'remaining']) {
+    expect(viaTool[key]).toEqual(http[key]);
+  }
+  // content mirrors structuredContent, per the transport spec.
+  expect(tool.content?.[0]?.text).toBe(JSON.stringify(viaTool));
+
+  const bad = (await client.call('get_wallet_summary', { wallet: '0x123' })).result as ToolResult;
+  expect(bad.isError).toBe(true);
+  expect(bad.content?.[0]?.text).toContain('Invalid wallet address.');
+  expect(JSON.stringify(bad)).not.toMatch(/[\u4e00-\u9fff]/);
+});
+
+test('set_wallet_budget without a signature returns a challenge and changes nothing', async () => {
+  const env = await startChain();
+  const { app } = buildApp(env, { agentRegistryChain: stubRegistry() });
+  const client = createMcpClient(app);
+  const wallet = getAddress(budgetWallet.address);
+  expect((await walletSummaryOf(app, wallet)).userBudget).toBeNull();
+
+  const issued = (
+    await client.call('set_wallet_budget', { wallet, dailyLimit: '20000' })
+  ).result as ToolResult;
+  expect(issued.isError).toBeUndefined();
+  const challenge = issued.structuredContent as { message: string; expiresAt: number };
+  expect(challenge.message).toContain("Scope: wallet's own budget");
+  expect(challenge.message).toContain('Daily budget: 0.02 USDT (20000)');
+  expect(typeof challenge.expiresAt).toBe('number');
+
+  // Issuing a challenge writes no budget row.
+  expect((await walletSummaryOf(app, wallet)).userBudget).toBeNull();
+});
+
+test('set_wallet_budget submits a signed change and matches HTTP', async () => {
+  const env = await startChain();
+  const { app, store } = buildApp(env, { agentRegistryChain: stubRegistry() });
+  const client = createMcpClient(app);
+  const wallet = getAddress(budgetWallet.address);
+
+  const issued = (
+    await client.call('set_wallet_budget', { wallet, dailyLimit: '20000' })
+  ).result as ToolResult;
+  const { message } = issued.structuredContent as { message: string };
+
+  const submitted = (
+    await client.call('set_wallet_budget', {
+      wallet,
+      dailyLimit: '20000',
+      signer: wallet,
+      signature: await budgetWallet.signMessage({ message }),
+    })
+  ).result as ToolResult;
+  expect(submitted.isError).toBeUndefined();
+  const viaTool = submitted.structuredContent as Record<string, any>;
+  expect(viaTool.userBudget.own.dailyLimit).toBe('20000');
+  expect(viaTool.userBudget.effective).toBe('20000');
+  expect(viaTool.userBudget.source).toBe('own');
+
+  const http = await walletSummaryOf(app, wallet);
+  expect(viaTool.userBudget).toEqual(http.userBudget);
+
+  // The audit trail records the MCP transport.
+  const event = store.listBudgetEvents(wallet)[0]!;
+  expect(event.via).toBe('mcp');
+  expect(event.scope).toBe('wallet');
+  expect(event.dailyLimit).toBe(20000n);
+});
+
+test('set_wallet_budget drives the owner ceiling flow over MCP', async () => {
+  const env = await startChain();
+  const wallet = getAddress(budgetWallet.address);
+  const owner = getAddress(budgetOwner.address);
+  const { app, store } = buildApp(env, {
+    agentRegistryChain: stubRegistry({ 7: { owner, wallet } }),
+  });
+  const client = createMcpClient(app);
+  const args = {
+    wallet,
+    dailyLimit: '50000',
+    scope: 'ceiling',
+    agentId: '7',
+    signer: owner,
+  };
+
+  const issued = (await client.call('set_wallet_budget', args)).result as ToolResult;
+  const { message } = issued.structuredContent as { message: string };
+  expect(message).toContain('Scope: owner ceiling for agent #7');
+
+  const submitted = (
+    await client.call('set_wallet_budget', {
+      ...args,
+      signature: await budgetOwner.signMessage({ message }),
+    })
+  ).result as ToolResult;
+  expect(submitted.isError).toBeUndefined();
+  const summary = submitted.structuredContent as Record<string, any>;
+  expect(summary.userBudget.effective).toBe('50000');
+  expect(summary.userBudget.source).toBe('ceiling');
+  expect(summary.userBudget.ceiling.agentId).toBe('7');
+
+  const event = store.listBudgetEvents(wallet)[0]!;
+  expect(event.scope).toBe('ceiling');
+  expect(event.via).toBe('mcp');
+  expect(event.agentId).toBe('7');
+
+  // The HTTP surface reads the same row.
+  expect((await walletSummaryOf(app, wallet)).userBudget.effective).toBe('50000');
+});
+
+test('set_wallet_budget returns the same English errors as HTTP', async () => {
+  const env = await startChain();
+  const wallet = getAddress(budgetWallet.address);
+  const owner = getAddress(budgetOwner.address);
+  const { app } = buildApp(env, {
+    agentRegistryChain: stubRegistry({ 7: { owner, wallet } }),
+  });
+  const client = createMcpClient(app);
+  const ceilingArgs = {
+    wallet,
+    dailyLimit: '50000',
+    scope: 'ceiling',
+    agentId: '7',
+    signer: owner,
+  };
+
+  // Ceiling 50000 first, then W tries to set its own value above it.
+  const ceilingIssued = (await client.call('set_wallet_budget', ceilingArgs)).result as ToolResult;
+  const ceilingMessage = (ceilingIssued.structuredContent as { message: string }).message;
+  await client.call('set_wallet_budget', {
+    ...ceilingArgs,
+    signature: await budgetOwner.signMessage({ message: ceilingMessage }),
+  });
+
+  const overIssued = (
+    await client.call('set_wallet_budget', { wallet, dailyLimit: '100000' })
+  ).result as ToolResult;
+  const overMessage = (overIssued.structuredContent as { message: string }).message;
+  const over = (
+    await client.call('set_wallet_budget', {
+      wallet,
+      dailyLimit: '100000',
+      signer: wallet,
+      signature: await budgetWallet.signMessage({ message: overMessage }),
+    })
+  ).result as ToolResult;
+  expect(over.isError).toBe(true);
+  expect(over.content?.[0]?.text).toBe(
+    "The daily budget exceeds the owner's limit of 0.05 USDT.",
+  );
+
+  // The owner cannot sign for the wallet's own budget.
+  const foreignIssued = (
+    await client.call('set_wallet_budget', { wallet, dailyLimit: '30000', signer: owner })
+  ).result as ToolResult;
+  const foreignMessage = (foreignIssued.structuredContent as { message: string }).message;
+  const foreign = (
+    await client.call('set_wallet_budget', {
+      wallet,
+      dailyLimit: '30000',
+      signer: owner,
+      signature: await budgetOwner.signMessage({ message: foreignMessage }),
+    })
+  ).result as ToolResult;
+  expect(foreign.isError).toBe(true);
+  expect(foreign.content?.[0]?.text).toBe('The signer is not allowed to set this budget.');
+
+  // A used signature cannot be submitted twice.
+  const ownIssued = (
+    await client.call('set_wallet_budget', { wallet, dailyLimit: '30000' })
+  ).result as ToolResult;
+  const ownMessage = (ownIssued.structuredContent as { message: string }).message;
+  const ownSignature = await budgetWallet.signMessage({ message: ownMessage });
+  const ownBody = { wallet, dailyLimit: '30000', signer: wallet, signature: ownSignature };
+  const first = (await client.call('set_wallet_budget', ownBody)).result as ToolResult;
+  expect(first.isError).toBeUndefined();
+  const replay = (await client.call('set_wallet_budget', ownBody)).result as ToolResult;
+  expect(replay.isError).toBe(true);
+  expect(replay.content?.[0]?.text).toContain('This challenge was already used.');
+});
+

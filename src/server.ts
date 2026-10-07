@@ -531,11 +531,6 @@ export function createApp(opts: {
         now,
       })
     : null;
-  const mcpEndpoint = createMcpEndpoint({
-    config: opts.config,
-    permit2Service,
-    discovery,
-  });
 
   const allowInsecureLocal = opts.config.network.name === "local";
   const agentOriginOf = (host: string) =>
@@ -674,6 +669,15 @@ export function createApp(opts: {
     registry: registryChain,
     now,
     summary: (wallet) => readApis.walletSummary(wallet, SUMMARY_RECEIPT_LIMIT),
+  });
+
+  // Built after the budget service so the MCP tools reuse the same
+  // challenge/submit code and the same wallet summary as the HTTP routes.
+  const mcpEndpoint = createMcpEndpoint({
+    config: opts.config,
+    permit2Service,
+    discovery,
+    budgets: budgetService,
   });
 
   const AGENT_CHALLENGE_PURPOSES = new Set(["agent-draft", "starter-gas"] as const);

@@ -303,5 +303,5 @@ export function createBudgetService(opts: {
     return opts.summary(wallet);
   };
 
-  return { issueChallenge: issue, submit };
+  return { issueChallenge: issue, submit, summary: opts.summary };
 }
