@@ -11,6 +11,7 @@ export interface Env {
   SETTLEMENT_RPC_URL?: string;
   SETTLEMENT_CONTRACT?: string;
   SETTLEMENT_PRIVATE_KEY?: string;
+  SETTLEMENT_PAYOUTS_DISABLED?: string;
   SETTLEMENT_HOST?: string;
   SETTLEMENT_PORT?: string;
   SETTLEMENT_PUBLIC_ORIGIN?: string;

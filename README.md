@@ -58,6 +58,40 @@ curl -H 'Host: market.bflabs.app' http://localhost:8787/healthz
 
 `compatibility_date` 目前固定为 `2026-10-03`，这是 `wrangler@4.143.0` 自带 workerd 支持的最新日期；升级 wrangler 后应改回部署当日。自定义域（`routes`）留到部署时再配置。
 
+### 同一套代码跑第二条链（Avalanche Fuji）
+
+BF Market 可以在另一条链上单独部署，和 BOT Chain 版互不影响。Fuji 已经具备 x402 付费路径需要的一切，不需要部署任何合约：
+
+- Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+- x402 exact Permit2 代理 `0x402085c248EeA27D92E8b30b2C58ed07f9E20001`、upto 代理 `0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002`
+- ERC-8004 官方身份注册表 `0x8004A818BFB912233c491871b3d84c89A494BD9e`
+- 测试 USDC `0x5425890298aed601595a70AB815c96711a31Bc65`
+
+Fuji 的 profile 默认仍要求 Settlement 出款合约（伙伴中心靠它在 Fuji 出款）。只做 x402 收款的部署用 `SETTLEMENT_PAYOUTS_DISABLED=true` 显式关掉出款，而不是塞一个占位合约地址；这个开关和结算合约不能同时配置。
+
+部署独立实例：
+
+```sh
+bun run build:web
+CLOUDFLARE_ACCOUNT_ID=b3f5c8a115367959cacd82878f8c84ab \
+  npx wrangler deploy -c wrangler.fuji.jsonc
+```
+
+`wrangler.fuji.jsonc` 把 Worker 名、自定义域和 `SETTLEMENT_NETWORK=fuji` 固定下来；密钥用 `wrangler secret put -c wrangler.fuji.jsonc` 单独写入。线上验收记录见 `docs/evidence/fuji-market-x402-2026-10-07.json`。
+
+在 Fuji 上注册服务商、跑一次付费调用：
+
+```sh
+AGENT_PRIVATE_KEY=0x... bun scripts/agent-register-demo.ts \
+  --network fuji --send --url https://market-fuji.bflabs.app --role provider
+
+AGENT_PRIVATE_KEY=0x... bun scripts/agent-pay-demo.ts \
+  --network fuji --send --rpc https://api.avax-test.network/ext/bc/C/rpc \
+  --url https://market-fuji.bflabs.app/api/services/echo/call --body '{"hello":"fuji"}'
+```
+
+`llm-pay-demo.ts` 用同样的 `--network fuji --send` 跑按量计费的 upto 路径。
+
 ## BeefAPI 接入
 
 BeefAPI 适配代码位于独立工作树 `codex/fuji-settlement`。它增加默认关闭、独立鉴权的测试接口。BeefAPI 原账本负责实际可用余额、冻结和已提现记录，结算服务不重复计算或复制可用佣金余额。

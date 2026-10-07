@@ -11,4 +11,5 @@ web/dist/
 .secrets/
 
 dist-worker/
+dist-worker-fuji/
 .wrangler/

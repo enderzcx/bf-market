@@ -1,0 +1,106 @@
+{
+  "result": "PASS",
+  "kind": "BF Market x402 agent-payment loop on Avalanche Fuji",
+  "date": "2026-10-07",
+  "network": {
+    "name": "fuji",
+    "displayName": "Avalanche Fuji",
+    "chainId": 43113,
+    "caip2": "eip155:43113",
+    "rpc": "https://api.avax-test.network/ext/bc/C/rpc",
+    "explorer": "https://testnet.snowtrace.io",
+    "asset": {
+      "symbol": "USDC",
+      "address": "0x5425890298aed601595a70AB815c96711a31Bc65",
+      "decimals": 6
+    }
+  },
+  "contracts": {
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "x402ExactPermit2Proxy": "0x402085c248EeA27D92E8b30b2C58ed07f9E20001",
+    "x402UptoPermit2Proxy": "0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002",
+    "erc8004IdentityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "note": "No contract was deployed for this run. Permit2, both x402 Permit2 proxies and the official ERC-8004 IdentityRegistry already have code on Fuji. The identity registry is the official deployment; its eip712Domain reports name=ERC8004IdentityRegistry, version=2.0.0, chainId=43113."
+  },
+  "deployment": {
+    "worker": "bf-market-fuji",
+    "origin": "https://market-fuji.bflabs.app",
+    "accountId": "b3f5c8a115367959cacd82878f8c84ab",
+    "config": "wrangler.fuji.jsonc",
+    "networkSelector": "fuji",
+    "payoutsDisabled": true,
+    "versions": [
+      "a571ccdc-907b-41a6-9902-f0bd14a8dee9",
+      "3328a9ab-0f50-4515-a465-208b23a4337f",
+      "88f93acd-2d7e-4c82-a958-ff74a393717f"
+    ],
+    "isolation": "Separate Worker, Durable Object, database and ops signer from the BOT Chain deployment at market.bflabs.app; the two do not share a ledger."
+  },
+  "publicAddresses": {
+    "opsAndProviderOwner": "0x24C2F88a3DfC7a14F44E9F5e3A903434794e277e",
+    "buyer": "0xED38064D9af2175d564344B15185663bdaeb31c6",
+    "providerAgentId": "253"
+  },
+  "registration": {
+    "agentId": "253",
+    "owner": "0x24C2F88a3DfC7a14F44E9F5e3A903434794e277e",
+    "agentWallet": "0x24C2F88a3DfC7a14F44E9F5e3A903434794e277e",
+    "role": "provider",
+    "listed": "pending",
+    "agentRegistry": "eip155:43113:0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "registerTx": "0xbd92484508d28f0d9cc1a9f52a47a89a6f7ffa639cbbd2409fce2037e5a9c0c7",
+    "blockNumber": "59138518"
+  },
+  "funding": {
+    "source": "existing Fuji test wallet 0x28172e0d973fFf24651B6Ed4cA6d1007bc168C94 (key read from /Users/sunny/Work/CC/beefapi/.env, never printed or committed)",
+    "opsAvaxTx": "0x83b7a7a86802d4d6409500bce25decdacb767baa01303d93fe9808a3e1cbb116",
+    "buyerAvaxTx": "0x9176c6f3697e51add09903ab16678467e22b77a618d373808180f7d849f223a5",
+    "buyerUsdcTx": "0xd3bde7d2b8adf7beb1141a830d4f68df9304d4f7b583a30bb0e021c3fc751225"
+  },
+  "paidCalls": [
+    {
+      "serviceId": "echo",
+      "scheme": "exact",
+      "quoteAtomic": "1000000",
+      "chargedAtomic": "1000000",
+      "httpStatus": 200,
+      "status": "delivered",
+      "permit2ApprovalTx": "0x4f28805d6847e15e9d3a87cae40ef3702287e0d1792de3df41853d5ddb569af1",
+      "settlementTx": "0x5fc2c19c9935635100ef15174eb8ae2863407fa86b9f44cbecc1c5a2ab557a05",
+      "result": "{\"result\":{\"ok\":true,\"serviceId\":\"echo\",\"echo\":{\"hello\":\"fuji\"}}}"
+    },
+    {
+      "serviceId": "llm-glm-5-3",
+      "scheme": "upto",
+      "quoteMaxAtomic": "19040",
+      "chargedAtomic": "168",
+      "usage": { "prompt_tokens": 27, "completion_tokens": 44, "total_tokens": 71 },
+      "httpStatus": 200,
+      "status": "delivered",
+      "modelReply": "fuji",
+      "settlementTx": "0xfda9f462969de9d49f17b5eb6da22a5ed7f4c6db64637e0311934972638fe1ce",
+      "note": "Metered: the 402 quoted a maximum, the call charged actual usage only (168 of 19040 atomic)."
+    }
+  ],
+  "balancesAfter": {
+    "ops": { "avax": "0.14999999993254065", "usdc": "1.000168" },
+    "buyer": { "avax": "0.029999999991084", "usdc": "1.999832" }
+  },
+  "readBacks": {
+    "healthz": "{\"ok\":true,\"payouts\":\"disabled\",\"network\":\"fuji\"}",
+    "statsPublic": "{\"calls\":2,\"settledUsdt\":\"1000168\",\"payers\":1,\"agents\":1}",
+    "discoveryNetwork": "eip155:43113, asset 0x5425890298aed601595a70AB815c96711a31Bc65, symbol USDC",
+    "walletSummaryNetwork": "eip155:43113",
+    "walletSummaryExplorerUrl": "https://testnet.snowtrace.io",
+    "skillMdNetworkLine": "BF Market is an agent commerce platform on the Avalanche Fuji (chain 43113)",
+    "llmsTxtNetworkLine": "Agent commerce platform on Avalanche Fuji.",
+    "routes": { "/records": 200, "/partner": 200, "/wallet": 200, "/docs": 200, "/mcp": 200 }
+  },
+  "limits": {
+    "scope": "Two paid calls from one buyer wallet to one provider agent. This is not a load test, not a multi-provider test and not a mainnet run.",
+    "approvalNotAtomic": "The Permit2 approve and the paid call are separate transactions; the approve is a one-time on-chain write per token.",
+    "providerListing": "The provider is registered on chain but still pending review in the off-chain catalog; approval policy is a later stage.",
+    "noPayouts": "This deployment charges x402 only. It runs no Settlement payout worker, so the partner-center commission flow is not exercised here.",
+    "evidence": "No private key, seed or API key appears in this file."
+  }
+}

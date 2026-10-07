@@ -134,6 +134,7 @@ test('summary returns the documented shape and null budget fields without any bu
       'agents',
       'asset',
       'day',
+      'explorerUrl',
       'network',
       'platform',
       'recentReceipts',
@@ -146,6 +147,8 @@ test('summary returns the documented shape and null budget fields without any bu
   );
   expect(payload.wallet).toBe(FRESH);
   expect(payload.network).toBe('eip155:31337');
+  // The console builds receipt links from this instead of hard-coding a chain.
+  expect(payload.explorerUrl).toBe('');
   // The asset is the configured network asset, the same one /api/services reports.
   expect(payload.asset).toEqual({
     address: profileForChainId(CHAIN_ID)!.asset.address,

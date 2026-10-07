@@ -83,6 +83,9 @@ export function createReadApis(opts: {
     return {
       wallet,
       network: config.network.caip2,
+      // The receipt links are built from this, so the console never hard-codes
+      // one network's block explorer.
+      explorerUrl: config.network.explorerUrl.replace(/\/+$/, ''),
       asset: {
         address: config.network.asset.address,
         symbol: config.network.asset.symbol,

@@ -97,6 +97,9 @@ function Footer() {
   const { t } = useT();
   const info = useFooterInfo();
   const network = info?.network;
+  // The same bundle serves every deployment, so the footer names the host it
+  // is actually served from rather than one hard-coded domain.
+  const host = typeof window !== 'undefined' ? window.location.host : '';
   const contracts = [
     info?.asset && [t('footerUsdt'), info.asset],
     info?.identity && [t('footerIdentity'), info.identity],
@@ -148,7 +151,7 @@ function Footer() {
           </span>
         </div>
         <div className='market-footer-bottom'>
-          <span>BF Market · market.bflabs.app</span>
+          <span>{host ? `BF Market · ${host}` : 'BF Market'}</span>
           <span>x402 · exact · upto · Permit2</span>
         </div>
       </div>

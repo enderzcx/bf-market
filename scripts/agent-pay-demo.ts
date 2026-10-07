@@ -67,12 +67,23 @@ try {
   process.exit(1);
 }
 
+const NETWORKS = {
+  local: { chainId: 31337, name: 'Local test chain', native: 'TEST' },
+  fuji: { chainId: 43113, name: 'Avalanche Fuji', native: 'AVAX' },
+  'botchain-testnet': { chainId: 968, name: 'BOT Chain Testnet', native: 'tBOT' },
+} as const;
+
 const account = privateKeyToAccount(key as `0x${string}`);
-const chainId = network === 'botchain-testnet' ? 968 : 31337;
+const net = NETWORKS[network as keyof typeof NETWORKS];
+if (!net) {
+  console.error(`Unknown network ${network}. Allowed: ${Object.keys(NETWORKS).join(' | ')}.`);
+  process.exit(1);
+}
+const chainId = net.chainId;
 const chain = defineChain({
   id: chainId,
-  name: network === 'botchain-testnet' ? 'BOT Chain Testnet' : 'Local test chain',
-  nativeCurrency: { name: 'Test gas', symbol: 'TEST', decimals: 18 },
+  name: net.name,
+  nativeCurrency: { name: net.native, symbol: net.native, decimals: 18 },
   rpcUrls: { default: { http: [rpcUrl] } },
 });
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl), cacheTime: 0 });

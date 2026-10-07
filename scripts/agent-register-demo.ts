@@ -7,6 +7,7 @@ import { privateKeyToAccount } from "viem/accounts";
 // --network botchain-testnet and --send to be explicit.
 const KNOWN_NETWORKS = {
   local: { chainId: 31337, rpcUrl: "http://127.0.0.1:8547" },
+  fuji: { chainId: 43113, rpcUrl: "https://api.avax-test.network/ext/bc/C/rpc" },
   "botchain-testnet": { chainId: 968, rpcUrl: "https://rpc.bohr.life" },
 } as const;
 

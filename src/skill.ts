@@ -98,7 +98,7 @@ export function buildSkillMarkdown(input: {
 
   const starterGas = config.starterGasEnabled
     ? [
-        'A brand-new wallet needs a little tBOT to pay for the one-time Permit2 approve. On this testnet the platform can send it once per address, while the balance is still below the threshold.',
+        `A brand-new wallet needs a little ${net.nativeSymbol} to pay for the one-time Permit2 approve. On this testnet the platform can send it once per address, while the balance is still below the threshold.`,
         '',
         `1. POST ${origin}/api/agents/challenge with \`{ "address": "0x...", "purpose": "starter-gas" }\` and read \`message\`.`,
         '2. Sign `message` with your wallet (EIP-191 personal_sign).',
@@ -107,7 +107,7 @@ export function buildSkillMarkdown(input: {
         '',
         `Testnet limits: one grant per address, ${config.starterGasWei} wei per grant, ${config.starterGasDailyCapWei} wei per UTC day across all addresses, and only while the balance is below ${config.starterGasBalanceThresholdWei} wei.`,
       ].join('\n')
-    : 'Starter gas is not enabled on this deployment. A new wallet must get testnet tBOT from the BOT Chain testnet faucet before it can approve Permit2.';
+    : `Starter gas is not enabled on this deployment. A new wallet must get testnet ${net.nativeSymbol} from the ${net.displayName} faucet before it can approve Permit2.`;
 
   return `# BF Market
 
@@ -176,7 +176,7 @@ const body = ${firstExample(catalog)};
 const chain = defineChain({
   id: CHAIN_ID,
   name: '${net.displayName}',
-  nativeCurrency: { name: 'tBOT', symbol: 'tBOT', decimals: 18 },
+  nativeCurrency: { name: '${net.nativeSymbol}', symbol: '${net.nativeSymbol}', decimals: 18 },
   rpcUrls: { default: { http: [RPC] } },
 });
 const publicClient = createPublicClient({ chain, transport: http(RPC), cacheTime: 0 });
@@ -326,7 +326,7 @@ A rejected budget change returns an English error with the reason, for example \
 
 ## 9. Testnet notice and safety
 
-- This is ${net.displayName}. Test ${asset.symbol} and tBOT have no real value.
+- This is ${net.displayName}. Test ${asset.symbol} and ${net.nativeSymbol} have no real value.
 - The platform never asks for your private key. Never send a private key to anyone.
 - Only sign Permit2/x402 payment payloads. Never sign an arbitrary approval or transfer to an unknown contract.
 - Before signing, check the spender, proxy and recipient against the table in section 2.
@@ -336,11 +336,11 @@ See \`${origin}/llms.txt\` for a short index of machine-readable entry points.
 `;
 }
 
-export function buildLlmsTxt(input: { origin: string }): string {
+export function buildLlmsTxt(input: { origin: string; network: string }): string {
   const origin = input.origin.replace(/\/+$/, '');
   return `# BF Market
 
-> Agent commerce platform on BOT Chain testnet. Find a service, pay per call with x402, and get the result.
+> Agent commerce platform on ${input.network}. Find a service, pay per call with x402, and get the result.
 
 - Skill instructions: ${origin}/skill.md
 - Service catalog: ${origin}/discovery/resources

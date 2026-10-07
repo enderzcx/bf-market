@@ -23,6 +23,9 @@ export type NetworkAsset = {
 export type NetworkProfile = {
   readonly name: NetworkName;
   readonly displayName: string;
+  // Native gas token symbol, used in agent-facing copy. Cosmetic only; it is
+  // deliberately not part of the settlement fingerprint.
+  readonly nativeSymbol: string;
   readonly chainId: number;
   readonly caip2: string;
   readonly rpcUrl: string;
@@ -52,6 +55,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
   local: {
     name: 'local',
     displayName: 'Local testnet',
+    nativeSymbol: 'tBOT',
     chainId: 31337,
     caip2: 'eip155:31337',
     rpcUrl: 'http://127.0.0.1:8547',
@@ -68,6 +72,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
   fuji: {
     name: 'fuji',
     displayName: 'Avalanche Fuji',
+    nativeSymbol: 'AVAX',
     chainId: 43113,
     caip2: 'eip155:43113',
     rpcUrl: 'https://api.avax-test.network/ext/bc/C/rpc',
@@ -95,6 +100,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
   'botchain-testnet': {
     name: 'botchain-testnet',
     displayName: 'BOT Chain Testnet',
+    nativeSymbol: 'tBOT',
     chainId: 968,
     caip2: 'eip155:968',
     rpcUrl: 'https://rpc.bohr.life',
