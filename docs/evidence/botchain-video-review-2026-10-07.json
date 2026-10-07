@@ -1,0 +1,23 @@
+{
+  "market": "https://market.bflabs.app",
+  "service": "https://market.bflabs.app/api/services/video-gemini-3-8-flash/call",
+  "network": "eip155:968",
+  "buyer": "0x458045aB70E11Ff1eeB5f6226e5E02f92f7B9ada",
+  "payTo": "0x9Fb2A80007047d249F5926960d870cD8aB5E7A4A",
+  "asset": "0x75edC9335175Fc0552D51D48439F229c10420fe3",
+  "quoteMaxAtomic": "38600",
+  "video": "https://market.bflabs.app/demo/pelican-neon-ride-v4.mp4",
+  "prompt": "You are the reviewer for a 20-second animated short. The editor who made it cannot watch video, so be concrete.\nIntended beats: a pelican rides a bicycle along a neon synthwave seafront; around 0:07 a fish leaps out of the sea into its throat pouch while a FISH.EXE billboard fills to 100%; around 0:12 it hops over a traffic cone; around 0:17 it brakes to a stop and sunglasses drop onto its face.\n1) List what actually happens with mm:ss timestamps.\n2) For each intended beat, say whether it reads clearly, and if not, why.\n3) List the visual problems an editor should fix, most severe first, each with a timestamp and a concrete fix.\nKeep it under 350 words.",
+  "httpStatus": 200,
+  "elapsedMs": 31720,
+  "model": "gemini-3.8-flash",
+  "usage": {
+    "prompt_tokens": 1495,
+    "completion_tokens": 1740,
+    "total_tokens": 3235
+  },
+  "chargedAtomic": "5968",
+  "permit2ApproveTx": null,
+  "settleTx": "0x06beaa253dc16648560c258fb0f7a2e97dc140fc1ee4541aa1ece7834bb629ed",
+  "review": "### 1. Actual Timeline\n* **00:00–00:05:** Pelican pedals rightward along a neon seafront against a synthwave sunset and scrolling skyline.\n* **00:06–00:08:** A glowing fish leaps from the water; pelican opens its beak and swallows it. A floating retro \"FISH.EXE\" window fills to 100%.\n* **00:09–00:11:** Pelican continues pedaling; a neon traffic cone approaches.\n* **00:12–00:13:** Pelican bunny-hops cleanly over the cone and lands.\n* **00:14–00:16:** Continues cruising.\n* **00:17–00:19:** Back tire emits sparks from braking; pixel sunglasses drop down and land on the pelican’s face.\n\n---\n\n### 2. Intended Beats Assessment\n* **Synthwave ride (0:00):** **Reads clearly.** Distinct neon aesthetics, smooth parallax, and readable silhouette.\n* **Fish catch & FISH.EXE (0:07):** **Partially reads.** The fish leaping into the pouch is clear, but \"FISH.EXE\" appears as an unanchored floating Windows 95 pop-up drifting through the sky, rather than an environmental billboard.\n* **Cone hop (0:12):** **Reads clearly.** Clear silhouette separation and clean timing over the obstacle.\n* **Brake & sunglasses (0:17):** **Reads clearly.** Sparking skid and falling glasses hit the punchline effectively.\n\n---\n\n### 3. Visual Fixes (Most to Least Severe)\n\n1. **Unanchored FISH.EXE Window (0:06–0:09)**  \n   *Problem:* The popup floats randomly in the sky layer and awkwardly intersects the pelican’s head as it scrolls left.  \n   *Fix:* Anchor it to a physical rooftop billboard frame in the background skyline, or pin it static to the top-right corner as a screen HUD element.\n\n2. **Rigid Hop Physics (0:12–0:13)**  \n   *Problem:* The jump is a mechanical vertical translation with no anticipation or momentum.  \n   *Fix:* Add 2 frames of crouch/squash before launch, angle the front wheel upward during ascent, and add a quick tire compression squash upon landing at 00:13.\n\n3. **Pedaling Through the Brake Skid (0:17)**  \n   *Problem:* Sparks emit from the rear tire while the legs are still mid-pedal cycle.  \n   *Fix:* Lock the pedals horizontally the instant sparks appear at 00:17 to sell the sudden brake."
+}
