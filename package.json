@@ -13,7 +13,9 @@
     "demo:orders": "bun scripts/order-demo.ts",
     "demo:agent-pay": "bun scripts/agent-pay-demo.ts",
     "verify:orders": "bun scripts/verify-order-demo.ts",
-    "build:web": "cd web && bun run build",
+    "build:web": "bun scripts/build-web.ts",
+    "build:web:e2e": "bun scripts/build-web.ts --e2e",
+    "dev:wallet-signer": "bun scripts/dev-wallet-signer.ts",
     "dev:web": "cd web && bun run dev",
     "dev:worker": "wrangler dev --local",
     "build:worker": "wrangler deploy --dry-run --outdir dist-worker"

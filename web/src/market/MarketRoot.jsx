@@ -3,8 +3,13 @@ import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router-do
 import { LanguageProvider, useT } from './i18n/index.js';
 import HomePage from './pages/HomePage.jsx';
 import MarketPage from './pages/MarketPage.jsx';
+import WalletPage from './pages/WalletPage.jsx';
 import DocsPage from './pages/DocsPage.jsx';
 import './styles/base.css';
+
+if (import.meta.env.VITE_BFM_TEST_WALLET === '1') {
+  void import('./wallet/test-provider.js').then((module) => module.installTestWallet());
+}
 
 function Header() {
   const location = useLocation();
@@ -182,14 +187,8 @@ function MarketRoutes() {
       <Routes>
         <Route path='/' element={<HomePage />} />
         <Route path='/market' element={<MarketPage />} />
-        <Route
-          path='/wallet'
-          element={<PlaceholderPage titleKey='consoleTitle' introKey='consoleIntro' />}
-        />
-        <Route
-          path='/wallet/:address'
-          element={<PlaceholderPage titleKey='walletTitle' introKey='walletIntro' />}
-        />
+        <Route path='/wallet' element={<WalletPage />} />
+        <Route path='/wallet/:address' element={<WalletPage />} />
         <Route
           path='/docs'
           element={<DocsPage />}
