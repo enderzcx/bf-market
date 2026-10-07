@@ -36,6 +36,17 @@ const BACKEND_ERROR_PATTERNS = [
   },
 ];
 
+// Browser fetch failures are thrown as TypeError with a browser-specific text
+// ("Failed to fetch" in Chromium, "Load failed" in Safari, "NetworkError …" in
+// Firefox). They carry no backend message, so both languages get their own copy
+// instead of surfacing the raw English string.
+const NETWORK_ERROR_PATTERN =
+  /^(?:typeerror:\s*)?(failed to fetch|fetch failed|load failed|network error|network request failed|networkerror when attempting to fetch resource\.?|the internet connection appears to be offline\.?)$/i;
+
+export function isNetworkError(message) {
+  return typeof message === 'string' && NETWORK_ERROR_PATTERN.test(message.trim());
+}
+
 function interpolate(template, replacements) {
   return template.replace(/\{([^}]+)\}/g, (match, name) =>
     Object.hasOwn(replacements, name) ? String(replacements[name]) : match,
@@ -56,6 +67,7 @@ export function resolveLang(search = '', stored = null, browser = '') {
 }
 
 export function translateBackendError(message, lang) {
+  if (isNetworkError(message)) return DICTIONARIES[lang === 'zh' ? 'zh' : 'en'].errorNetwork;
   if (lang !== 'zh') return message;
   const key = BACKEND_ERRORS[message];
   if (key) return zh[key];

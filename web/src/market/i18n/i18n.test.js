@@ -50,6 +50,25 @@ describe('market dictionaries', () => {
     expect(translateBackendError('Something odd happened.', 'en')).toBe('Something odd happened.');
   });
 
+  it('maps network failures to a localized message in both languages', () => {
+    const messages = [
+      'Failed to fetch',
+      'TypeError: Failed to fetch',
+      'NetworkError when attempting to fetch resource.',
+      'Load failed',
+      'fetch failed',
+      'Network request failed',
+      'The Internet connection appears to be offline.',
+    ];
+    for (const message of messages) {
+      expect(translateBackendError(message, 'zh'), message).toBe(zh.errorNetwork);
+      expect(translateBackendError(message, 'en'), message).toBe(en.errorNetwork);
+      expect(translateBackendError(message, 'en')).not.toBe(message);
+      expect(translateBackendError(message, 'zh')).not.toContain('Failed');
+    }
+    expect(translateBackendError('Something odd happened.', 'zh')).toBe('Something odd happened.');
+  });
+
   it('interpolates the amount in dynamic budget errors', () => {
     const zhCeiling = translateBackendError(
       "The daily budget exceeds the owner's limit of 0.050000 USDT.",

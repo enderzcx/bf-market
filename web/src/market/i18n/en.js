@@ -280,4 +280,5 @@ export default {
   errorNoRegistry:
     'No identity registry is configured on this network, so ownership cannot be verified.',
   errorWalletMismatch: "The agent's payment wallet does not match. Refresh the agent and try again.",
+  errorNetwork: 'Network request failed. Check your connection and try again.',
 };

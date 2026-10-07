@@ -279,4 +279,5 @@ export default {
   errorRegistryUnavailable: '无法读取身份注册表，请重试。',
   errorNoRegistry: '当前网络未配置身份注册表，无法验证所有权。',
   errorWalletMismatch: '该智能体的付款钱包已变化，请刷新后重试。',
+  errorNetwork: '网络请求失败，请检查网络连接后重试。',
 };

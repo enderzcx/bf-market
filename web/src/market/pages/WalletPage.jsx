@@ -4,6 +4,8 @@ import { useT } from '../i18n/index.js';
 import { createInjectedWallet } from '../wallet/injected.js';
 import { createWalletSession } from '../wallet/session.js';
 import { createBudgetChangeGate, submitBudgetChange } from '../wallet/budget-flow.js';
+import { postJson } from '../wallet/http.js';
+import { createOwnerConsoleStore } from '../wallet/owner-console.js';
 import {
   budgetChallengeKey,
   buildBudgetIntent,
@@ -16,34 +18,6 @@ import {
   walletBudgetAccessKey,
 } from './wallet-model.js';
 import './wallet.css';
-
-async function readJson(response) {
-  const text = await response.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchJson(path, init) {
-  const response = await fetch(path, init);
-  const data = await readJson(response);
-  if (!response.ok) {
-    const message = typeof data?.error === 'string' && data.error ? data.error : '';
-    throw new Error(message || `Request failed (${response.status}).`);
-  }
-  return data;
-}
-
-function postJson(path, body) {
-  return fetchJson(path, {
-    method: 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}
 
 // Connect flow shared by the lookup page and the public wallet view, so both
 // offer the same button, wallet picker and error handling.
@@ -402,16 +376,15 @@ function BudgetControl({
 
 function OwnerConsole({ account, session, refreshNonce, onChanged }) {
   const { t, translateError } = useT();
-  const [ownerData, setOwnerData] = React.useState(null);
-  const [summary, setSummary] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
-  const [failed, setFailed] = React.useState(false);
+  const storeRef = React.useRef(null);
+  if (!storeRef.current) storeRef.current = createOwnerConsoleStore();
+  const store = storeRef.current;
+  const [state, setState] = React.useState(() => store.getState());
   const [agentId, setAgentId] = React.useState('');
   const [refreshError, setRefreshError] = React.useState('');
   const [refreshBusy, setRefreshBusy] = React.useState(false);
   const [activeBudgetKeys, setActiveBudgetKeys] = React.useState(() => new Set());
   const budgetGateRef = React.useRef(null);
-  const loadedAccount = React.useRef(null);
 
   if (!budgetGateRef.current) budgetGateRef.current = createBudgetChangeGate();
 
@@ -430,33 +403,17 @@ function OwnerConsole({ account, session, refreshNonce, onChanged }) {
     };
   }, []);
 
+  // The rows live in a store rather than in component state: it owns the
+  // accountsChanged transition (drop the previous owner's agents, then fetch
+  // the new owner's) and ignores a response that arrives after a switch.
+  React.useEffect(() => store.subscribe(setState), [store]);
   React.useEffect(() => {
-    const controller = new AbortController();
-    // Only block the console on the first load for this account; a refresh after
-    // a budget change keeps the current rows visible while it reloads.
-    if (loadedAccount.current !== account) setLoading(true);
-    setFailed(false);
-    Promise.all([
-      fetchJson(`/api/owners/${encodeURIComponent(account)}/agents`, {
-        signal: controller.signal,
-      }),
-      fetchJson(`/api/wallets/${encodeURIComponent(account)}/summary`, {
-        signal: controller.signal,
-      }),
-    ])
-      .then(([owner, walletSummary]) => {
-        loadedAccount.current = account;
-        setOwnerData(owner);
-        setSummary(walletSummary);
-      })
-      .catch((error) => {
-        if (error.name !== 'AbortError') setFailed(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [account, refreshNonce]);
+    void store.setAccount(account);
+  }, [store, account]);
+  React.useEffect(() => {
+    if (refreshNonce > 0) void store.refresh();
+  }, [store, refreshNonce]);
+  React.useEffect(() => () => store.destroy(), [store]);
 
   const refreshAgent = async (event) => {
     event.preventDefault();
@@ -478,14 +435,20 @@ function OwnerConsole({ account, session, refreshNonce, onChanged }) {
     }
   };
 
-  if (loading) {
-    return <p className='wallet-loading' role='status'>{t('walletLoading')}</p>;
-  }
-  if (failed || !ownerData) {
+  if (state.failed) {
     return <p className='wallet-inline-error' role='alert'>{t('walletLoadAgentsFailed')}</p>;
   }
+  // Rows render only when they belong to the connected account, so switching
+  // accounts shows the loading state instead of the previous owner's agents.
+  if (state.loadedAccount !== account || !state.ownerData) {
+    return <p className='wallet-loading' role='status'>{t('walletLoading')}</p>;
+  }
 
-  const model = buildOwnerConsoleModel({ ownerData, summary, account });
+  const model = buildOwnerConsoleModel({
+    ownerData: state.ownerData,
+    summary: state.summary,
+    account,
+  });
   const { wallet } = model;
 
   return (
