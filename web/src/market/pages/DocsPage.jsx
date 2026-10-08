@@ -244,6 +244,15 @@ export default function DocsPage() {
               {model.network?.decimals != null ? ` · ${t('docsDecimals', { count: model.network.decimals })}` : ''}
             </dd>
           </div>
+          {model.network?.faucet && (
+            <div>
+              <dt>{t('docsFaucet')}</dt>
+              <dd>
+                <a href={model.network.faucet} target='_blank' rel='noreferrer'>{model.network.faucet}</a>
+                <span className='docs-prose'> · {t('docsFaucetNote')}</span>
+              </dd>
+            </div>
+          )}
           {model.contracts.map(([key, value]) => (
             <div key={key}>
               <dt>{contractLabels[key] ?? key}</dt>

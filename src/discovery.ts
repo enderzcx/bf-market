@@ -159,6 +159,7 @@ export type DiscoveryNetwork = {
   chainId: number;
   caip2: string;
   explorer: string;
+  faucet: string | null;
   asset: string;
   symbol: string;
   decimals: number;
@@ -215,6 +216,7 @@ export function createServiceDiscovery(opts: {
     chainId: opts.config.network.chainId,
     caip2: opts.config.network.caip2,
     explorer: opts.config.network.explorerUrl,
+    faucet: opts.config.network.faucetUrl ?? null,
     asset: opts.config.chain.token,
     symbol: opts.config.network.asset.symbol,
     decimals: opts.config.network.asset.decimals,

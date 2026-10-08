@@ -37,6 +37,7 @@ type DiscoveryItem = {
 
 type DiscoveryList = {
   x402Version: number;
+  network: { faucet: string | null };
   items: DiscoveryItem[];
   pagination: { limit: number; offset: number; total: number };
 };
@@ -67,6 +68,8 @@ test('discovery lists available services in the Bazaar format with matching paym
   const body = (await res.json()) as DiscoveryList;
   expect(body.x402Version).toBe(2);
   expect(body.pagination).toEqual({ limit: 50, offset: 0, total: 1 });
+  // The local chain has no public faucet; the field is present but empty.
+  expect(body.network.faucet).toBeNull();
   expect(body.items).toHaveLength(1);
 
   const item = body.items[0]!;

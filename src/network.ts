@@ -30,6 +30,9 @@ export type NetworkProfile = {
   readonly caip2: string;
   readonly rpcUrl: string;
   readonly explorerUrl: string;
+  // Public faucet for the test gas token and settlement token. Cosmetic like
+  // nativeSymbol, so it stays out of the settlement fingerprint.
+  readonly faucetUrl?: string;
   readonly asset: NetworkAsset;
   readonly permit2?: Address;
   readonly x402Permit2Proxy?: Address;
@@ -105,6 +108,7 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
     caip2: 'eip155:968',
     rpcUrl: 'https://rpc.bohr.life',
     explorerUrl: 'https://scan.bohr.life',
+    faucetUrl: 'https://faucet.botchain.ai/basic',
     asset: {
       address: '0x75edC9335175Fc0552D51D48439F229c10420fe3',
       decimals: 6,

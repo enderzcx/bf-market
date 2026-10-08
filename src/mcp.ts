@@ -243,6 +243,9 @@ export function createMcpEndpoint(opts: {
       '',
       `Network: ${net.displayName}, chain ${net.chainId} (${net.caip2}). Settlement token: ${net.asset.symbol} (${net.asset.address}).`,
       registry ? `Identity registry: ${registry}` : 'No identity registry is configured on this network.',
+      ...(net.faucetUrl
+        ? [`Faucet for test ${net.nativeSymbol} and ${net.asset.symbol}: ${net.faucetUrl} (a person completes its human verification).`]
+        : []),
       '',
       'Providers must register an ERC-8004 identity to list services and receive payments; buyers can pay without registering.',
       'To register, call register_agent_info for the steps.',
@@ -267,6 +270,7 @@ export function createMcpEndpoint(opts: {
           asset: net.asset.address,
           symbol: net.asset.symbol,
           explorer: net.explorerUrl,
+          faucet: net.faucetUrl ?? null,
         },
       ],
       registry,

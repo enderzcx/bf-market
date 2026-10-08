@@ -125,6 +125,19 @@ test('skill.md is generated from the live network config and catalog', async () 
   expect(dump).not.toContain('/Volumes/');
   expect(dump).not.toContain('.local');
   expect(dump).not.toContain('process.cwd');
+  // The local network has no public faucet, so none is advertised.
+  expect(dump).not.toContain('faucet.botchain.ai');
+});
+
+test('skill.md points new wallets at the BOT Chain faucet', async () => {
+  const { app, config } = buildBotchainApp();
+  const faucet = 'https://faucet.botchain.ai/basic';
+  expect(config.network.faucetUrl).toBe(faucet);
+
+  const md = await (await req(app, '/skill.md')).text();
+  expect(md).toContain(`| Faucet (test tBOT and USDT) | ${faucet} (human verification required) |`);
+  expect(md).toContain(`Test tBOT and test USDT both come from the faucet at ${faucet}.`);
+  expect(md).toContain(`top up the buyer wallet with testnet USDT from ${faucet}.`);
 });
 
 test('skill.md is precise about results, schemes, approvals and charges', async () => {

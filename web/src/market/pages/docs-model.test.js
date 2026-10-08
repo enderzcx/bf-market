@@ -19,6 +19,7 @@ const discoveryData = {
     asset: '0xToken',
     symbol: 'USDT',
     decimals: 6,
+    faucet: 'https://faucet.botchain.ai/basic',
   },
   items: [
     {
@@ -66,6 +67,7 @@ describe('docsDataModel', () => {
       caip2: 'eip155:968',
       symbol: 'USDT',
       decimals: 6,
+      faucet: 'https://faucet.botchain.ai/basic',
     });
     expect(model.contracts).toEqual([
       ['asset', '0xToken'],

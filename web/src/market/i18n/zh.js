@@ -246,6 +246,8 @@ export default {
   docsContractExactProxy: 'x402 exact 代理',
   docsContractUptoProxy: 'x402 upto 代理',
   docsContractIdentity: 'ERC-8004 身份注册表',
+  docsFaucet: '测试币水龙头',
+  docsFaucetNote: '可领测试 gas 和测试 {token}，需人工验证',
   docsSafety: '测试网与安全提示',
   docsSafetyIntro: '当前部署用于测试。请把每次钱包签名都视为在其标明范围内转移资金的授权。',
   docsSafetyTestnet: '测试网代币没有现实价值。付款前请核对网络标识和代币。',

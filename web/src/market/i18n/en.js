@@ -246,6 +246,8 @@ export default {
   docsContractExactProxy: 'x402 exact proxy',
   docsContractUptoProxy: 'x402 upto proxy',
   docsContractIdentity: 'ERC-8004 identity registry',
+  docsFaucet: 'Test token faucet',
+  docsFaucetNote: 'test gas and test {token}, human verification required',
   docsSafety: 'Testnet and safety',
   docsSafetyIntro: 'This deployment is for testing. Treat every wallet signature as authorization to move funds within its stated limits.',
   docsSafetyTestnet: 'Testnet tokens have no real-world value. Check the network identifier and token before paying.',

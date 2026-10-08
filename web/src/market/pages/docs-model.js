@@ -50,6 +50,7 @@ export function docsDataModel({ servicesData, discoveryData, summaryData }) {
           caip2: networkId,
           symbol: discoveryNetwork?.symbol ?? null,
           decimals: discoveryNetwork?.decimals ?? null,
+          faucet: typeof discoveryNetwork?.faucet === 'string' ? discoveryNetwork.faucet : null,
         }
       : null,
     contracts,

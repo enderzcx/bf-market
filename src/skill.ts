@@ -96,6 +96,17 @@ export function buildSkillMarkdown(input: {
   const globalDaily = formatUsdt(config.llmGlobalDailyCapAtomic);
   const budgetCeiling = formatUsdt(budgetMax(config));
 
+  const faucet = net.faucetUrl;
+  const faucetRow = faucet
+    ? `\n| Faucet (test ${net.nativeSymbol} and ${asset.symbol}) | ${faucet} (human verification required) |`
+    : '';
+  const faucetNote = faucet
+    ? `\n\nTest ${net.nativeSymbol} and test ${asset.symbol} both come from the faucet at ${faucet}. It asks for a human verification, so the person running the agent claims them for the wallet address.`
+    : '';
+  const topUp = faucet
+    ? `top up the buyer wallet with testnet ${asset.symbol} from ${faucet}.`
+    : `top up the buyer wallet with testnet ${asset.symbol}.`;
+
   const starterGas = config.starterGasEnabled
     ? [
         `A brand-new wallet needs a little ${net.nativeSymbol} to pay for the one-time Permit2 approve. On this testnet the platform can send it once per address, while the balance is still below the threshold.`,
@@ -144,7 +155,7 @@ A wallet signature is the identity, so there is no account and no login. The sho
 | Permit2 | ${permit2} |
 | x402 exact Permit2 proxy | ${exactProxy} |
 | x402 upto Permit2 proxy | ${uptoProxy} |
-| Identity registry (ERC-8004) | ${registry} |
+| Identity registry (ERC-8004) | ${registry} |${faucetRow}
 
 ### Minimal TypeScript example
 
@@ -233,7 +244,7 @@ console.log('result', responseBody.result);
 
 ## 3. Starter gas for a new wallet
 
-${starterGas}
+${starterGas}${faucetNote}
 
 ## 4. List a service as a provider
 
@@ -313,7 +324,7 @@ A rejected budget change returns an English error with the reason, for example \
 
 - \`PAYMENT-SIGNATURE header is required\` - send the signed payment in the \`PAYMENT-SIGNATURE\` header.
 - \`Buyer has not approved Permit2, or the allowance is too low.\` - send the one-time Permit2 approve for ${asset.symbol} first.
-- \`Buyer has insufficient ${asset.symbol} balance.\` - top up the buyer wallet with testnet ${asset.symbol}.
+- \`Buyer has insufficient ${asset.symbol} balance.\` - ${topUp}
 - \`Payment authorization has expired. Sign a new payment.\` - the signed deadline passed; sign a fresh payload.
 - \`Payment authorization was already used.\` or \`This payment was already used for another service.\` - every signature settles once; sign a new one for a new call.
 - \`Settlement amount exceeds the signed upper bound.\` - you signed below the quote; sign the exact amount from the 402.
