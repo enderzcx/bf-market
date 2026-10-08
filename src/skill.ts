@@ -7,6 +7,8 @@ import {
   LLM_QUOTE_INPUT_TOKENS,
   LLM_QUOTE_OUTPUT_TOKENS,
   meteredUpperBound,
+  VIDEO_MAX_BYTES,
+  VIDEO_MAX_PROMPT_CHARS,
 } from './llm.ts';
 import type { ServiceCatalog, ServiceDefinition } from './services.ts';
 import { UPTO_PERMIT2_PROXY } from './x402/index.ts';
@@ -42,9 +44,14 @@ function serviceRow(definition: ServiceDefinition, symbol: string): string {
   const cap = formatUsdt(priceCapOf(definition));
   if (definition.pricing.mode === 'metered') {
     const pricing = definition.pricing.pricing;
+    const maxTokens = `max_tokens <= ${LLM_MAX_MAX_TOKENS} (default ${LLM_DEFAULT_MAX_TOKENS})`;
+    const inputLimits =
+      pricing.input === 'video'
+        ? `video_url: public https mp4, mov or webm, <= ${VIDEO_MAX_BYTES / 1024 / 1024} MB; prompt <= ${VIDEO_MAX_PROMPT_CHARS} chars; ${maxTokens}; quote assumes ${pricing.quoteInputTokens ?? LLM_QUOTE_INPUT_TOKENS} input tokens`
+        : `total input <= ${LLM_MAX_CONTENT_CHARS} chars; ${maxTokens}`;
     return [
       `| \`${definition.serviceId}\` | ${pricing.modelId} | metered (x402 \`upto\`) | ${cap} ${symbol} |`,
-      ` total input <= ${LLM_MAX_CONTENT_CHARS} chars; max_tokens <= ${LLM_MAX_MAX_TOKENS} (default ${LLM_DEFAULT_MAX_TOKENS}) |`,
+      ` ${inputLimits} |`,
       ` fixed quote up to ${LLM_QUOTE_OUTPUT_TOKENS} completion tokens |`,
       ` input $${usd(pricing.inputMicroUsdPerMillion)} / 1M tokens, output $${usd(pricing.outputMicroUsdPerMillion)} / 1M tokens |`,
     ].join('');

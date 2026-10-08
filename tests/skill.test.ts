@@ -108,6 +108,14 @@ test('skill.md is generated from the live network config and catalog', async () 
   expect(md).toContain('glm-5.3');
   expect(md).toContain('claude-opus-5-5');
 
+  // Each row states the limits of its own input shape.
+  const rowOf = (id: string) => md.split('\n').find((line) => line.startsWith(`| \`${id}\` |`)) ?? '';
+  expect(rowOf('llm-glm-5-3')).toContain('total input <= 8000 chars');
+  const videoRow = rowOf('video-gemini-3-8-flash');
+  expect(videoRow).toContain('video_url: public https mp4, mov or webm, <= 20 MB; prompt <= 4000 chars');
+  expect(videoRow).toContain('quote assumes 64000 input tokens');
+  expect(videoRow).not.toContain('8000 chars');
+
   // The minimal example is runnable and never asks for a shared key.
   expect(md).toContain("from '@x402/core/client'");
   expect(md).toContain("from '@x402/evm/upto/client'");
