@@ -247,7 +247,14 @@ async function rotateAgentWallet(
   agentId: string,
   wallet: ReturnType<typeof privateKeyToAccount>,
 ): Promise<void> {
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
+  let nowSeconds: bigint;
+  try {
+    const block = await env.client.getBlock();
+    nowSeconds = block.timestamp;
+  } catch {
+    nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  }
+  const deadline = nowSeconds + 200n;
   const signature = await wallet.signTypedData({
     domain: {
       name: 'ERC8004IdentityRegistry',
