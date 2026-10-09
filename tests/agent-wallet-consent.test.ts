@@ -63,7 +63,13 @@ async function buildConsent(
 ) {
   const nominated = options.newWallet ?? NEW_WALLET;
   const domain = await readAgentWalletSetDomain(env.client, env.registry);
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  let nowSeconds: bigint;
+  try {
+    const block = await env.client.getBlock();
+    nowSeconds = block.timestamp;
+  } catch {
+    nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  }
   const consent = {
     agentId,
     newWallet: getAddress(nominated.address),

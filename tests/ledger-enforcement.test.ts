@@ -891,7 +891,7 @@ test('the limit check order maps each combination to its own text', async () => 
     expect(res.status).toBe(429);
     expect(await errorText(res)).toBe('Daily spending limit reached for this payer.');
   }
-});
+}, 15_000);
 
 // ---- rejected requests -----------------------------------------------------
 

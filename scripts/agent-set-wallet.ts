@@ -154,7 +154,13 @@ export async function main(
     })) as Address,
   );
 
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  let nowSeconds: bigint;
+  try {
+    const block = await publicClient.getBlock();
+    nowSeconds = block.timestamp;
+  } catch {
+    nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  }
   const consent = {
     agentId,
     newWallet: getAddress(newWallet.address) as Address,

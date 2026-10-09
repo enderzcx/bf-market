@@ -124,12 +124,15 @@ function mcpSchema(): Record<string, unknown> {
   };
 }
 
+export type ServiceHealth = ReturnType<Store['serviceHealth']>;
+
 export type DiscoveryFilter = {
   type?: string;
   payTo?: string;
   scheme?: string;
   network?: string;
   extensions?: string;
+  sort?: 'health' | 'latency' | 'calls';
   limit?: number;
   offset?: number;
 };
@@ -142,6 +145,7 @@ export type DiscoveryItem = {
   description: string;
   mimeType: string;
   lastUpdated: string;
+  health: ServiceHealth;
   extensions: Record<string, unknown>;
   provider: {
     agentId: string;
@@ -179,9 +183,9 @@ const MAX_LIMIT = 200;
 
 export function parseDiscoveryFilter(searchParams: URLSearchParams): DiscoveryFilter {
   const filter: DiscoveryFilter = {};
-  for (const key of ['type', 'payTo', 'scheme', 'network', 'extensions'] as const) {
+  for (const key of ['type', 'payTo', 'scheme', 'network', 'extensions', 'sort'] as const) {
     const value = searchParams.get(key);
-    if (value != null && value !== '') filter[key] = value;
+    if (value != null && value !== '') filter[key] = value as any;
   }
   for (const key of ['limit', 'offset'] as const) {
     const value = searchParams.get(key);
@@ -233,6 +237,7 @@ export function createServiceDiscovery(opts: {
     const lastUpdated = provider?.createdAt
       ? new Date(provider.createdAt).toISOString()
       : new Date(now()).toISOString();
+    const health = opts.store.serviceHealth(definition.serviceId);
     return {
       resource: serviceUrl(origin, definition.serviceId),
       type: 'http',
@@ -241,6 +246,7 @@ export function createServiceDiscovery(opts: {
       description: definition.description,
       mimeType: 'application/json',
       lastUpdated,
+      health,
       extensions: bazaarHttpExtension(definition),
       provider: {
         agentId: definition.providerAgentId,
@@ -268,6 +274,26 @@ export function createServiceDiscovery(opts: {
       }
       if (filter.extensions && !(filter.extensions in item.extensions)) return false;
       return true;
+    });
+  };
+
+  const sortItems = (items: DiscoveryItem[], sort?: string): DiscoveryItem[] => {
+    if (!sort) return items;
+    return [...items].sort((a, b) => {
+      if (sort === 'health') {
+        const rateA = a.health.successRate24h ?? 0;
+        const rateB = b.health.successRate24h ?? 0;
+        return rateB - rateA;
+      }
+      if (sort === 'latency') {
+        const latA = a.health.medianLatencyMs ?? 999999;
+        const latB = b.health.medianLatencyMs ?? 999999;
+        return latA - latB;
+      }
+      if (sort === 'calls') {
+        return b.health.totalCalls - a.health.totalCalls;
+      }
+      return 0;
     });
   };
 
@@ -301,7 +327,7 @@ export function createServiceDiscovery(opts: {
       if (filter.payTo && !isValidPayTo(filter.payTo)) {
         throw new ServiceError(400, 'Invalid payout address.');
       }
-      const items = applyFilter(all(origin), filter);
+      const items = sortItems(applyFilter(all(origin), filter), filter.sort);
       const { page, total, limit, offset } = paginate(items, filter);
       return {
         x402Version: X402_VERSION,
@@ -312,9 +338,10 @@ export function createServiceDiscovery(opts: {
     },
 
     search(origin: string, filter: DiscoveryFilter & { query?: string }) {
-      const items = applyFilter(all(origin), filter).filter((item) =>
+      const filtered = applyFilter(all(origin), filter).filter((item) =>
         matchesQuery(item, filter.query ?? ''),
       );
+      const items = sortItems(filtered, filter.sort);
       const { page, total, limit, offset } = paginate(items, filter);
       return {
         x402Version: X402_VERSION,

@@ -12,6 +12,14 @@ import {
 import type { Store } from './store.ts';
 import type { Address, Hex } from './types.ts';
 import { ServiceError } from './types.ts';
+import { createImageClient } from './services/image.ts';
+import { createVideoGenClient } from './services/video.ts';
+
+function atomicAmount(usdtDollars: number, decimals: number): bigint {
+  const factor = 10n ** BigInt(decimals);
+  const cents = BigInt(Math.round(usdtDollars * 100));
+  return (cents * factor) / 100n;
+}
 
 // Paid-service catalog. `exact` services charge a fixed price quoted up front;
 // `metered` services quote a fixed per-call maximum and settle the actual token
@@ -69,10 +77,13 @@ function usdt(atomic: bigint): string {
 function meteredDescription(modelId: string, pricing: MeteredPricing, symbol: string): string {
   const video = pricing.input === 'video';
   const quoteInput = pricing.quoteInputTokens ?? LLM_QUOTE_INPUT_TOKENS;
+  const intro = video
+    ? `Video understanding (model ${modelId}, native multimodal) served through BeefAPI: send a video URL and a question, get the model's answer about what happens in the video.`
+    : modelId === 'grok-4.7'
+      ? `LLM chat completion with live real-time X (Twitter) search (model ${modelId}) served through BeefAPI. Retrieves real-time public tweets, sentiment, and breaking news without requiring a separate Twitter API subscription.`
+      : `LLM chat completion (model ${modelId}) served through BeefAPI.`;
   return [
-    video
-      ? `Video understanding (model ${modelId}, native multimodal) served through BeefAPI: send a video URL and a question, get the model's answer about what happens in the video.`
-      : `LLM chat completion (model ${modelId}) served through BeefAPI.`,
+    intro,
     `Priced per token: $${usd(pricing.inputMicroUsdPerMillion)} per 1M input tokens and $${usd(pricing.outputMicroUsdPerMillion)} per 1M output tokens, charged in ${symbol} by actual usage.`,
     `The 402 quotes a fixed per-call maximum of ${usdt(meteredUpperBound(pricing))} ${symbol}, the same for every request (the price of ${quoteInput} input and ${LLM_QUOTE_OUTPUT_TOKENS} output tokens). Upstream models add hidden prompt tokens, so the maximum is above a typical call; only the actual usage is charged, at most that maximum and possibly lower or zero.`,
     'Payment uses the x402 `upto` scheme only.',
@@ -81,6 +92,98 @@ function meteredDescription(modelId: string, pricing: MeteredPricing, symbol: st
       : 'Input is an OpenAI chat body: {"messages":[{"role","content"}],"max_tokens"?}; total content is at most 8000 characters, max_tokens defaults to 1000 and is capped at 2000.',
     'Non-streaming only: omit stream or set it to false.',
   ].join(' ');
+}
+
+function imageDefinition(
+  providerAgentId: string,
+  symbol: string,
+  decimals: number,
+): ServiceDefinition {
+  const price = atomicAmount(0.20, decimals);
+  return {
+    serviceId: 'image-gpt-image-2-5',
+    providerAgentId,
+    price,
+    pricing: { mode: 'exact' },
+    description: `AI Image Generation (model gpt-image-2.5) served through BeefAPI: generates high-resolution images from natural language text prompts. Fixed price: $0.20 in ${symbol}.`,
+    deliver: 'image',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          maxLength: 2000,
+          description: 'Text prompt describing the desired image.',
+        },
+        size: {
+          type: 'string',
+          enum: ['1024x1024', '1024x1792', '1792x1024'],
+          default: '1024x1024',
+          description: 'Image dimensions.',
+        },
+      },
+      required: ['prompt'],
+      additionalProperties: true,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', format: 'uri', description: 'Generated image public URL or data URI.' },
+        model: { type: 'string' },
+        created: { type: 'integer' },
+      },
+      required: ['url', 'model', 'created'],
+    },
+    inputExample: { prompt: 'A futuristic cybernetic pelican overlooking neon Tokyo skyline, digital art', size: '1024x1024' },
+    outputExample: {
+      url: 'https://images.example.com/generated/pelican-cyberpunk.png',
+      model: 'gpt-image-2.5',
+      created: 1728518400,
+    },
+  };
+}
+
+function videoGenDefinition(
+  providerAgentId: string,
+  symbol: string,
+  decimals: number,
+): ServiceDefinition {
+  const price = atomicAmount(0.05, decimals);
+  return {
+    serviceId: 'video-wan-3-0',
+    providerAgentId,
+    price,
+    pricing: { mode: 'exact' },
+    description: `AI Video Generation (model wan3.0-video) served through BeefAPI: generates high-fidelity short video clips from text prompts. Fixed price: $0.05 in ${symbol}. Output video URL is ready for playback or downstream automated review.`,
+    deliver: 'video_gen',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          maxLength: 2000,
+          description: 'Text prompt describing the desired video scene and motion.',
+        },
+      },
+      required: ['prompt'],
+      additionalProperties: true,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', format: 'uri', description: 'Generated MP4 video download/streaming URL.' },
+        model: { type: 'string' },
+        taskId: { type: 'string' },
+      },
+      required: ['url', 'model', 'taskId'],
+    },
+    inputExample: { prompt: 'A pelican swooping gracefully over ocean waves at golden sunset, slow motion' },
+    outputExample: {
+      url: 'https://videos.example.com/generated/pelican-waves.mp4',
+      model: 'wan3.0-video',
+      taskId: 'task_wan3_abc123',
+    },
+  };
 }
 
 function videoInputSchema(): Record<string, unknown> {
@@ -244,17 +347,46 @@ export function createServiceCatalog(opts: {
         { serviceId: 'llm-glm-5-3', modelId: 'glm-5.3' },
         { serviceId: 'llm-claude-opus-5-5', modelId: 'claude-opus-5-5' },
         { serviceId: 'llm-gpt-6-astra', modelId: 'gpt-6-astra' },
+        { serviceId: 'llm-grok-4-7', modelId: 'grok-4.7' },
+        { serviceId: 'llm-deepseek-v4-1-flash', modelId: 'deepseek-v4.1-flash' },
+        { serviceId: 'llm-qwen3-8-flash', modelId: 'qwen3.8-flash' },
         { serviceId: 'video-gemini-3-8-flash', modelId: 'gemini-3.8-flash' },
       ], opts.config.network.asset.symbol),
+      imageDefinition(
+        opts.config.serviceProviderAgentId,
+        opts.config.network.asset.symbol,
+        opts.config.network.asset.decimals,
+      ),
+      videoGenDefinition(
+        opts.config.serviceProviderAgentId,
+        opts.config.network.asset.symbol,
+        opts.config.network.asset.decimals,
+      ),
     );
   }
   const byId = new Map(definitions.map((definition) => [definition.serviceId, definition]));
   const meteredDeliver: DeliverHandler = async () => {
     throw new ServiceError(500, 'Metered services are handled by the settlement service.');
   };
-  const delivers: Record<string, DeliverHandler> = opts.delivers ?? {
+  const imageClient = createImageClient(opts.config);
+  const videoGenClient = createVideoGenClient(opts.config);
+
+  const defaultDelivers: Record<string, DeliverHandler> = {
     echo: async (ctx) => ({ ok: true, serviceId: ctx.serviceId, echo: ctx.body }),
     metered: meteredDeliver,
+    image: async (ctx) => {
+      const prompt = typeof ctx.body.prompt === 'string' ? ctx.body.prompt : '';
+      const size = typeof ctx.body.size === 'string' ? ctx.body.size : undefined;
+      return await imageClient.generate({ prompt, size, user: ctx.payer });
+    },
+    video_gen: async (ctx) => {
+      const prompt = typeof ctx.body.prompt === 'string' ? ctx.body.prompt : '';
+      return await videoGenClient.generate({ prompt });
+    },
+  };
+  const delivers: Record<string, DeliverHandler> = {
+    ...defaultDelivers,
+    ...(opts.delivers ?? {}),
   };
   // Always provide the metered placeholder so a metered definition resolves even
   // when a custom deliver map only supplies the exact handlers.

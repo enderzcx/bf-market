@@ -383,6 +383,7 @@ export function createPermit2Service(opts: {
         maxTokens: input.request.maxTokens,
         user: input.payer.toLowerCase(),
         video: input.request.video,
+        api: input.pricing.api,
       });
     } catch (err) {
       if (err instanceof LlmError && err.reason === 'video') {

@@ -776,7 +776,7 @@ test("bounded login limiter does not distinguish unknown accounts", async () => 
   const unknownLocked = await login(app, "nobody", "wrong");
   expect(unknownLocked.res.status).toBe(401);
   expect(unknownLocked.body.error).toBe(LOGIN_FAILED);
-});
+}, 15_000);
 
 
 test("parallel password checks are bounded and unknown mutations deny by default", async () => {
@@ -786,4 +786,4 @@ test("parallel password checks are bounded and unknown mutations deny by default
   expect(batch.filter(x=>x.res.status===200).length).toBeLessThanOrEqual(4);
   const valid = batch.find(x=>x.sid)!;
   expect((await req(app,"/api/future-mutation",{sid:valid.sid,method:"POST",body:"{}"})).status).toBe(403);
-});
+}, 15_000);

@@ -46,7 +46,13 @@ export type NetworkProfile = {
   readonly payoutsRequired: boolean;
 };
 
-export const NETWORK_NAMES = ['local', 'fuji', 'botchain-testnet'] as const;
+export const NETWORK_NAMES = [
+  'local',
+  'fuji',
+  'botchain-testnet',
+  'bsc',
+  'bsc-testnet',
+] as const;
 export type NetworkName = (typeof NETWORK_NAMES)[number];
 
 // Deployed per-run by scripts/local-chain.ts. The live address always comes
@@ -118,6 +124,45 @@ const PROFILES: Record<NetworkName, NetworkProfile> = {
     permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
     x402Permit2Proxy: '0x402085c248EeA27D92E8b30b2C58ed07f9E20001',
     identityRegistry: '0xe35a670Ec84477b54f976Ddfa5f8E4601FfC8607',
+    finality: { kind: 'finalized' },
+    payoutsRequired: false,
+  },
+  bsc: {
+    name: 'bsc',
+    displayName: 'BNB Smart Chain',
+    nativeSymbol: 'BNB',
+    chainId: 56,
+    caip2: 'eip155:56',
+    rpcUrl: 'https://binance.llamarpc.com',
+    explorerUrl: 'https://bscscan.com',
+    asset: {
+      address: '0x55d398326f99059fF775485246999027B3197955',
+      decimals: 18,
+      symbol: 'USDT',
+      transferMethods: ['permit2'],
+    },
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+    x402Permit2Proxy: '0x402085c248EeA27D92E8b30b2C58ed07f9E20001',
+    finality: { kind: 'finalized' },
+    payoutsRequired: false,
+  },
+  'bsc-testnet': {
+    name: 'bsc-testnet',
+    displayName: 'BNB Smart Chain Testnet',
+    nativeSymbol: 'tBNB',
+    chainId: 97,
+    caip2: 'eip155:97',
+    rpcUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545',
+    explorerUrl: 'https://testnet.bscscan.com',
+    faucetUrl: 'https://www.bnbchain.org/en/testnet-faucet',
+    asset: {
+      address: '0x337610d27c682E347C9cD60BD4b3b107C9d34dDd',
+      decimals: 18,
+      symbol: 'USDT',
+      transferMethods: ['permit2'],
+    },
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+    x402Permit2Proxy: '0x402085c248EeA27D92E8b30b2C58ed07f9E20001',
     finality: { kind: 'finalized' },
     payoutsRequired: false,
   },

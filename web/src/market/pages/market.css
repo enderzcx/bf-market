@@ -279,3 +279,84 @@
     margin-left: 0;
   }
 }
+
+.market-service-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--market-radius);
+  font-family: var(--market-font-mono);
+  font-size: 0.65rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.market-health-healthy {
+  background: rgba(46, 204, 113, 0.12);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.market-health-stable {
+  background: rgba(52, 152, 219, 0.12);
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, 0.3);
+}
+
+.market-health-degraded {
+  background: rgba(231, 76, 60, 0.12);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.market-health-unknown {
+  background: rgba(149, 165, 166, 0.1);
+  color: var(--market-dim);
+  border: 1px solid var(--market-border);
+}
+
+.market-health-dot {
+  font-size: 0.55rem;
+}
+
+.market-proofs-section {
+  margin-top: 0.8rem;
+  padding: 0.6rem;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--market-radius);
+  border: 1px solid var(--market-border);
+}
+
+.market-proof-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.market-proof-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--market-font-mono);
+  font-size: 0.68rem;
+}
+
+.market-proof-time {
+  color: var(--market-dim);
+}
+
+.market-proof-tx {
+  color: var(--market-accent);
+}
+
+.market-proof-badge {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  padding: 0.05rem 0.3rem;
+  border-radius: 2px;
+}
+

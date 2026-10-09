@@ -732,16 +732,25 @@ test('providers groups the catalog by provider agent with draft profile fields',
     'llm-glm-5-3',
     'llm-claude-opus-5-5',
     'llm-gpt-6-astra',
+    'llm-grok-4-7',
+    'llm-deepseek-v4-1-flash',
+    'llm-qwen3-8-flash',
     'video-gemini-3-8-flash',
+    'image-gpt-image-2-5',
+    'video-wan-3-0',
   ]);
   expect(services[0]).toMatchObject({ pricing: 'exact', price: '1000000' });
-  expect(services.slice(1).map((service) => service.quoteMax)).toEqual([
+  const meteredServices = services.filter((s) => s.pricing === 'metered');
+  expect(meteredServices.map((service) => service.quoteMax)).toEqual([
     '19040',
     '36800',
     '69000',
+    '11160',
+    '4992',
+    '1554',
     '38600',
   ]);
-  for (const service of services.slice(1)) {
+  for (const service of meteredServices) {
     expect(service.pricing).toBe('metered');
     expect(typeof service.modelId).toBe('string');
     expect(Object.keys(service).sort()).toEqual([
@@ -752,6 +761,12 @@ test('providers groups the catalog by provider agent with draft profile fields',
       'serviceId',
     ]);
   }
+  const exactServices = services.filter((s) => s.pricing === 'exact');
+  expect(exactServices.map((s) => s.serviceId)).toEqual([
+    'echo',
+    'image-gpt-image-2-5',
+    'video-wan-3-0',
+  ]);
   // No two provider entries share an agentId.
   expect(new Set(payload.providers.map((p: { agentId: string }) => p.agentId)).size).toBe(1);
 });

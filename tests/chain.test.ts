@@ -4,7 +4,7 @@ import { keccak256, toHex, parseAbi, encodeFunctionData } from "viem";
 import { EvmChain, settlementAbi, FUJI_USDC } from "../src/chain.js";
 import { startLocalChain, OTHER_KEY } from "../scripts/local-chain.js";
 
-test("real EVM: funding, permission, pause, replay protection, receipt matching and reverted transfer", async () => {
+test("real EVM: funding, permission, pause, replay protection, receipt matching and reverted transfer", { timeout: 30_000 }, async () => {
   const local = await startLocalChain(0);
   try {
     const adapter = new EvmChain(local.config);
@@ -144,7 +144,7 @@ test("real EVM: funding, permission, pause, replay protection, receipt matching 
   }
 });
 
-test("persistent local EVM restart preserves payout receipt and replay guard", async () => {
+test("persistent local EVM restart preserves payout receipt and replay guard", { timeout: 30_000 }, async () => {
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");

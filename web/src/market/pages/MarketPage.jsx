@@ -11,12 +11,30 @@ function useProviders() {
 
   React.useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/providers', { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('providers request failed');
-        return response.json();
+    Promise.all([
+      fetch('/api/providers', { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error('providers request failed');
+        return r.json();
+      }),
+      fetch('/api/services', { signal: controller.signal })
+        .then((r) => (r.ok ? r.json() : { services: [] }))
+        .catch(() => ({ services: [] })),
+    ])
+      .then(([provData, servData]) => {
+        const healthMap = new Map(
+          (servData?.services || []).map((s) => [s.serviceId, s.health]),
+        );
+        const provs = Array.isArray(provData.providers) ? provData.providers : [];
+        setProviders(
+          provs.map((p) => ({
+            ...p,
+            services: (p.services || []).map((s) => ({
+              ...s,
+              health: s.health || healthMap.get(s.serviceId),
+            })),
+          })),
+        );
       })
-      .then((data) => setProviders(Array.isArray(data.providers) ? data.providers : []))
       .catch((error) => {
         if (error.name !== 'AbortError') setFailed(true);
       })
@@ -41,8 +59,13 @@ function ServiceRow({ provider, service }) {
   const curlBody =
     service.serviceId === 'echo'
       ? `'{\"hello\":\"world\"}'`
-      : `'{\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one sentence.\"}]}'`;
+      : service.serviceId.startsWith('image-')
+        ? `'{\"prompt\":\"A futuristic cybernetic pelican overlooking neon Tokyo skyline, digital art\"}'`
+        : service.serviceId.startsWith('video-wan')
+          ? `'{\"prompt\":\"A pelican swooping gracefully over ocean waves at golden sunset, slow motion\"}'`
+          : `'{\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one sentence.\"}]}'`;
   const curlExample = `curl -X POST '${callUrl}' \\\n  -H 'Content-Type: application/json' \\\n  -d ${curlBody}`;
+  const health = service.health;
 
   return (
     <article className='market-service'>
@@ -60,6 +83,15 @@ function ServiceRow({ provider, service }) {
         <span className='market-service-type'>
           {metered ? t('pricingMetered') : t('pricingExact')}
         </span>
+        {health && (
+          <span className={`market-service-health market-health-${health.status}`}>
+            <span className='market-health-dot' aria-hidden='true'>●</span>
+            {health.status === 'healthy' && `${health.successRate24h}% · ${health.medianLatencyMs}ms`}
+            {health.status === 'stable' && (health.medianLatencyMs ? `${health.medianLatencyMs}ms` : 'Active')}
+            {health.status === 'degraded' && 'Degraded'}
+            {health.status === 'unknown' && 'New'}
+          </span>
+        )}
         <span className='market-service-price'>
           <span className='market-service-price-label'>
             {metered ? t('maxPerCall') : t('pricePerCall')}
@@ -90,6 +122,20 @@ function ServiceRow({ provider, service }) {
         <p className='market-service-url'>
           <span>{t('callUrl')}:</span> <code>{callUrl}</code>
         </p>
+        {health && health.recentProofs?.length > 0 && (
+          <div className='market-proofs-section'>
+            <span className='market-detail-label'>Verified On-Chain Deliveries</span>
+            <ul className='market-proof-list'>
+              {health.recentProofs.map((proof) => (
+                <li key={proof.txHash} className='market-proof-item'>
+                  <span className='market-proof-time'>{new Date(proof.timestamp).toLocaleTimeString()}</span>
+                  <code className='market-proof-tx'>{proof.txHash.slice(0, 10)}...{proof.txHash.slice(-8)}</code>
+                  <span className='market-proof-badge'>Verified Permit2</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className='market-curl-example'>
           <span className='market-detail-label'>{t('exampleRequest')}</span>
           <pre>

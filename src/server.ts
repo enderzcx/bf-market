@@ -1209,7 +1209,65 @@ export function createApp(opts: {
             description: definition.description,
             network: opts.config.network.caip2,
             asset: opts.config.network.asset.address,
+            health: opts.store.serviceHealth(definition.serviceId),
           })),
+        });
+      }
+      const inspectMatch =
+        req.method === "GET"
+          ? /^\/api\/services\/([^/]+)\/inspect$/.exec(url.pathname)
+          : null;
+      if (inspectMatch) {
+        if (!permit2Service) throw new ServiceError(404, "Endpoint not found.");
+        requireHost(req);
+        const serviceId = decodeURIComponent(inspectMatch[1]!);
+        const definition = serviceCatalog.get(serviceId);
+        if (!definition) throw new ServiceError(404, "Service not found.");
+        const resolved = serviceCatalog.resolve(serviceId);
+        const health = opts.store.serviceHealth(serviceId);
+        const provider = opts.store.getAgent(opts.config.chain.chainId, definition.providerAgentId);
+        const draft = opts.store.getAgentDraftByAgentId(definition.providerAgentId);
+        const accepts = permit2Facilitator
+          ? (definition.pricing.mode === 'metered'
+              ? [permit2Facilitator.uptoRequirementsOf({
+                  amount: meteredUpperBound(definition.pricing.pricing).toString(),
+                  asset: getAddress(opts.config.chain.token) as Address,
+                  payTo: resolved.payTo,
+                })]
+              : [permit2Facilitator.requirementsOf({
+                  amount: definition.price.toString(),
+                  asset: getAddress(opts.config.chain.token) as Address,
+                  payTo: resolved.payTo,
+                })])
+          : [];
+
+        return json(200, {
+          ok: true,
+          serviceId: definition.serviceId,
+          provider: {
+            agentId: definition.providerAgentId,
+            name: draft?.profile.name ?? `Agent ${definition.providerAgentId}`,
+            wallet: resolved.payTo,
+            uri: provider?.agentUri ?? '',
+          },
+          pricing: definition.pricing.mode === 'metered'
+            ? {
+                mode: 'metered',
+                modelId: definition.pricing.pricing.modelId,
+                inputMicroUsdPerMillion: definition.pricing.pricing.inputMicroUsdPerMillion.toString(),
+                outputMicroUsdPerMillion: definition.pricing.pricing.outputMicroUsdPerMillion.toString(),
+                input: definition.pricing.pricing.input ?? 'text',
+                api: definition.pricing.pricing.api ?? 'chat',
+              }
+            : { mode: 'exact' },
+          price: definition.price.toString(),
+          description: definition.description,
+          inputSchema: definition.inputSchema,
+          outputSchema: definition.outputSchema,
+          inputExample: definition.inputExample,
+          outputExample: definition.outputExample,
+          accepts,
+          health,
         });
       }
       // Public receipts. The list is scoped to one payer and the payer is

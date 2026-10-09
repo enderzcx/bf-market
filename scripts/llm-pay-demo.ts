@@ -74,6 +74,8 @@ const NETWORKS = {
   local: { chainId: 31337, name: 'Local test chain', native: 'TEST' },
   fuji: { chainId: 43113, name: 'Avalanche Fuji', native: 'AVAX' },
   'botchain-testnet': { chainId: 968, name: 'BOT Chain Testnet', native: 'tBOT' },
+  bsc: { chainId: 56, name: 'BNB Smart Chain', native: 'BNB' },
+  'bsc-testnet': { chainId: 97, name: 'BNB Smart Chain Testnet', native: 'tBNB' },
 } as const;
 
 const account = privateKeyToAccount(key as `0x${string}`);

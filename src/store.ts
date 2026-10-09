@@ -746,6 +746,95 @@ export function createStore(opts: {
     };
   };
 
+  const serviceHealth = (
+    serviceId: string,
+    limit = 20,
+  ): {
+    status: 'healthy' | 'stable' | 'degraded' | 'unknown';
+    medianLatencyMs: number | null;
+    tailLatencyMs: number | null;
+    successRate24h: number | null;
+    totalCalls: number;
+    recentProofs: Array<{
+      txHash: string;
+      chargedAmount: string | null;
+      timestamp: number;
+    }>;
+  } => {
+    const rows = db
+      .query(
+        `SELECT status, created_at, updated_at, tx_hash, charged_amount
+         FROM service_payments
+         WHERE service_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(serviceId, limit) as Array<{
+      status: string;
+      created_at: number;
+      updated_at: number;
+      tx_hash: string | null;
+      charged_amount: string | null;
+    }>;
+
+    if (rows.length === 0) {
+      return {
+        status: 'unknown',
+        medianLatencyMs: null,
+        tailLatencyMs: null,
+        successRate24h: null,
+        totalCalls: 0,
+        recentProofs: [],
+      };
+    }
+
+    const latencies: number[] = [];
+    let successCount = 0;
+    const recentProofs: Array<{
+      txHash: string;
+      chargedAmount: string | null;
+      timestamp: number;
+    }> = [];
+
+    for (const row of rows) {
+      if (row.status === 'delivered' || row.status === 'settled') {
+        successCount++;
+        const latency = row.updated_at - row.created_at;
+        if (latency >= 0) latencies.push(latency);
+        if (row.tx_hash && recentProofs.length < 5) {
+          recentProofs.push({
+            txHash: row.tx_hash,
+            chargedAmount: row.charged_amount,
+            timestamp: row.updated_at || row.created_at,
+          });
+        }
+      }
+    }
+
+    latencies.sort((a, b) => a - b);
+    const medianLatencyMs =
+      latencies.length > 0 ? latencies[Math.floor(latencies.length / 2)]! : null;
+    const tailLatencyMs =
+      latencies.length > 0 ? latencies[Math.floor(latencies.length * 0.9)]! : null;
+    const successRate24h = Math.round((successCount / rows.length) * 100);
+
+    let status: 'healthy' | 'stable' | 'degraded' | 'unknown' = 'healthy';
+    if (successRate24h < 80) {
+      status = 'degraded';
+    } else if (rows.length < 3) {
+      status = 'stable';
+    }
+
+    return {
+      status,
+      medianLatencyMs,
+      tailLatencyMs,
+      successRate24h,
+      totalCalls: rows.length,
+      recentProofs,
+    };
+  };
+
   const getPayout = (id: string): PayoutRecord | null => {
     const row = db
       .query(`SELECT * FROM payouts WHERE id = ?`)
@@ -1800,6 +1889,7 @@ export function createStore(opts: {
     getServicePayment,
     listServicePaymentsByPayer,
     publicServiceStats,
+    serviceHealth,
     // Creates the payment row on first sight, or returns the existing one for
     // the same (chain, payer, nonce) authorization so a replay never re-settles.
     upsertServicePayment(input: {

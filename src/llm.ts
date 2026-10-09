@@ -18,6 +18,8 @@ export type MeteredPricing = {
   input?: 'chat' | 'video';
   // Input-token allowance in the fixed quote; defaults to LLM_QUOTE_INPUT_TOKENS.
   quoteInputTokens?: bigint;
+  // Upstream protocol preference: 'responses' for OpenAI Responses API (/v1/responses), 'chat' for /v1/chat/completions
+  api?: 'responses' | 'chat';
 };
 
 const MICRO = 1_000_000n;
@@ -57,6 +59,24 @@ export const METERED_PRICING: Record<string, MeteredPricing> = {
     modelId: 'gpt-6-astra',
     inputMicroUsdPerMillion: 3_000_000n,
     outputMicroUsdPerMillion: 15_000_000n,
+  },
+  'grok-4.7': {
+    modelId: 'grok-4.7',
+    inputMicroUsdPerMillion: 600_000n,
+    outputMicroUsdPerMillion: 1_800_000n,
+    api: 'responses',
+  },
+  'deepseek-v4.1-flash': {
+    modelId: 'deepseek-v4.1-flash',
+    inputMicroUsdPerMillion: 240_000n,
+    outputMicroUsdPerMillion: 960_000n,
+    api: 'responses',
+  },
+  'qwen3.8-flash': {
+    modelId: 'qwen3.8-flash',
+    inputMicroUsdPerMillion: 80_000n,
+    outputMicroUsdPerMillion: 270_000n,
+    api: 'responses',
   },
   // Native video understanding. A minute of video is roughly 16k input tokens,
   // so the quote allows 64k input tokens instead of the chat default.
@@ -316,6 +336,49 @@ export async function fetchVideoDataUrl(url: string): Promise<string> {
   }
 }
 
+export function extractResponsesResult(data: unknown): LlmChatResult | null {
+  if (!data || typeof data !== 'object') return null;
+  const row = data as Record<string, unknown>;
+  const output = row.output;
+  if (!Array.isArray(output)) return null;
+  let text = '';
+  for (const item of output) {
+    if (item && typeof item === 'object') {
+      const itemRow = item as Record<string, unknown>;
+      if (itemRow.type === 'message' && Array.isArray(itemRow.content)) {
+        for (const part of itemRow.content) {
+          if (part && typeof part === 'object') {
+            const partRow = part as Record<string, unknown>;
+            if (typeof partRow.text === 'string') {
+              text += partRow.text;
+            }
+          }
+        }
+      }
+    }
+  }
+  const usageRaw = row.usage as Record<string, unknown> | undefined;
+  if (!usageRaw || typeof usageRaw !== 'object') return null;
+  const promptTokens =
+    typeof usageRaw.input_tokens === 'number'
+      ? usageRaw.input_tokens
+      : typeof usageRaw.prompt_tokens === 'number'
+        ? usageRaw.prompt_tokens
+        : 0;
+  const completionTokens =
+    typeof usageRaw.output_tokens === 'number'
+      ? usageRaw.output_tokens
+      : typeof usageRaw.completion_tokens === 'number'
+        ? usageRaw.completion_tokens
+        : 0;
+  if (promptTokens < 0 || completionTokens < 0 || !text) return null;
+  return {
+    content: text,
+    usage: { promptTokens, completionTokens },
+    upstreamRequestId: typeof row.id === 'string' ? row.id : null,
+  };
+}
+
 export type LlmClient = ReturnType<typeof createLlmClient>;
 
 export function createLlmClient(config: RuntimeConfig) {
@@ -328,6 +391,7 @@ export function createLlmClient(config: RuntimeConfig) {
       maxTokens: number;
       user: string;
       video?: { url: string };
+      api?: 'responses' | 'chat';
     }): Promise<LlmChatResult> {
       let messages: unknown[] = input.messages;
       if (input.video) {
@@ -349,6 +413,45 @@ export function createLlmClient(config: RuntimeConfig) {
         ? Math.max(config.llmRequestTimeoutMs, VIDEO_REQUEST_TIMEOUT_MS)
         : config.llmRequestTimeoutMs;
       const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      // Attempt high-performance Responses API when requested for non-video text requests
+      if (input.api === 'responses' && !input.video) {
+        try {
+          const resp = await fetch(`${base}/v1/responses`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${config.llmBeefapiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: input.model,
+              input: input.messages,
+              max_output_tokens: input.maxTokens,
+              stream: false,
+              user: input.user,
+            }),
+            signal: controller.signal,
+          });
+          if (resp.ok) {
+            const parsed = extractResponsesResult(await resp.json());
+            if (parsed) {
+              clearTimeout(timer);
+              return parsed;
+            }
+          }
+          if (resp.status !== 404) {
+            clearTimeout(timer);
+            throw new LlmError('upstream', 'The model provider rejected the request.');
+          }
+        } catch (err) {
+          if (err instanceof LlmError) throw err;
+          if ((err as Error)?.name === 'AbortError') {
+            clearTimeout(timer);
+            throw new LlmError('timeout', 'The model provider did not respond.');
+          }
+        }
+      }
+
       let response: Response;
       try {
         response = await fetch(`${base}/v1/chat/completions`, {

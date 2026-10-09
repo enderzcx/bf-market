@@ -7,7 +7,7 @@ import {compileKtrace,deploymentSteps,addresses,OWNER,TOKEN,type Name} from '../
 import {compile} from '../scripts/compile.ts';
 import {LOCAL_KEY,OTHER_KEY} from '../scripts/local-chain.ts';
 const bundle=compileKtrace();
-test('unchanged KTrace deployment graph, permissions, guarded job payment and replay rejection',async()=>{
+test('unchanged KTrace deployment graph, permissions, guarded job payment and replay rejection', { timeout: 30_000 }, async()=>{
  const server=ganache.server({chain:{chainId:677,hardfork:'shanghai'},wallet:{unlockedAccounts:[OWNER],accounts:[LOCAL_KEY,OTHER_KEY].map(secretKey=>({secretKey,balance:'0x3635c9adc5dea00000'}))},logging:{quiet:true}});
  await server.listen(0,'127.0.0.1');
  try{

@@ -102,8 +102,14 @@ test("selector and chain id must agree", () => {
   ).toThrow(/冲突/);
 });
 
-test("the three known profiles carry the expected chain facts", () => {
-  expect([...NETWORK_NAMES]).toEqual(["local", "fuji", "botchain-testnet"]);
+test("the known profiles carry the expected chain facts", () => {
+  expect([...NETWORK_NAMES]).toEqual([
+    "local",
+    "fuji",
+    "botchain-testnet",
+    "bsc",
+    "bsc-testnet",
+  ]);
 
   const local = NETWORK_PROFILES.local;
   expect(local.chainId).toBe(31337);
@@ -133,6 +139,24 @@ test("the three known profiles carry the expected chain facts", () => {
   // Fuji keeps requiring a payout contract by default (partner center); an
   // x402-only deployment opts out with SETTLEMENT_PAYOUTS_DISABLED.
   expect(fuji.payoutsRequired).toBe(true);
+
+  const bsc = NETWORK_PROFILES.bsc;
+  expect(bsc.chainId).toBe(56);
+  expect(bsc.caip2).toBe("eip155:56");
+  expect(bsc.asset.symbol).toBe("USDT");
+  expect(bsc.asset.decimals).toBe(18);
+  expect(bsc.permit2?.toLowerCase()).toBe(
+    "0x000000000022d473030f116ddee9f6b43ac78ba3",
+  );
+
+  const bscTestnet = NETWORK_PROFILES["bsc-testnet"];
+  expect(bscTestnet.chainId).toBe(97);
+  expect(bscTestnet.caip2).toBe("eip155:97");
+  expect(bscTestnet.asset.symbol).toBe("USDT");
+  expect(bscTestnet.asset.decimals).toBe(18);
+  expect(bscTestnet.permit2?.toLowerCase()).toBe(
+    "0x000000000022d473030f116ddee9f6b43ac78ba3",
+  );
 
   expect(BOTCHAIN.chainId).toBe(968);
   expect(BOTCHAIN.caip2).toBe("eip155:968");
