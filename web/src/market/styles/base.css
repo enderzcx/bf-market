@@ -6,7 +6,7 @@
 
 html {
   min-width: 320px;
-  background-color: var(--market-bg);
+  background: var(--market-bg);
   scroll-behavior: smooth;
 }
 
@@ -14,16 +14,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background-color: var(--market-bg);
-  background-image: 
-    radial-gradient(circle at 50% -20%, rgba(245, 158, 11, 0.12) 0%, transparent 60%),
-    radial-gradient(circle at 90% 20%, rgba(6, 182, 212, 0.05) 0%, transparent 45%),
-    linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
-  background-attachment: fixed;
+  background: var(--market-bg);
   color: var(--market-fg);
-  font: var(--market-text-sm) / 1.65 var(--market-font-sans);
+  font: var(--market-text-sm) / 1.65 var(--market-font-mono);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -34,52 +27,12 @@ html[lang^='zh'] body {
   letter-spacing: 0.01em;
 }
 
-/* Custom Sleek Scrollbar */
-::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
-::-webkit-scrollbar-track {
-  background: var(--market-bg);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--market-border-strong);
-  border-radius: var(--market-radius-full);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--market-accent);
-}
-
-/* Global Keyframe Animations */
-@keyframes pulse-live {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
 a {
   color: var(--market-accent);
   text-decoration: none;
-  transition: color var(--market-transition-fast);
 }
 
 a:hover {
-  color: var(--market-accent-light);
   text-decoration: underline;
 }
 
@@ -107,12 +60,12 @@ nav,
 }
 
 ::selection {
-  color: #000;
-  background: var(--market-accent-light);
+  color: var(--market-bg);
+  background: var(--market-accent);
 }
 
 :focus-visible {
-  outline: 2px solid var(--market-accent);
+  outline: 1px solid var(--market-accent);
   outline-offset: 3px;
 }
 
@@ -123,144 +76,108 @@ nav,
 }
 
 .market-container {
-  width: min(100% - 3rem, 960px);
+  width: min(100% - 3rem, 860px);
   margin-inline: auto;
 }
 
 .market-header {
   position: sticky;
-  z-index: 50;
+  z-index: 10;
   top: 0;
-  border-bottom: 1px solid var(--market-border);
-  background: rgba(8, 9, 13, 0.82);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  transition: all var(--market-transition);
+  border-bottom: var(--market-rule);
+  background: var(--market-bg);
 }
 
 .market-header-inner {
   display: flex;
-  min-height: 58px;
+  min-height: 54px;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1.15rem;
   padding-block: 0.4rem;
 }
 
 .market-brand {
   flex: 0 0 auto;
   color: var(--market-fg);
-  font-weight: 700;
-  font-size: var(--market-text-sm);
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 1px;
   white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: opacity var(--market-transition-fast);
 }
 
 .market-brand:hover {
   text-decoration: none;
-  opacity: 0.9;
 }
 
 .market-nav {
   display: flex;
   min-width: 0;
   flex: 1;
-  gap: 1.5rem;
-  margin-left: 0.5rem;
+  gap: 1.25rem;
 }
 
 .market-nav a {
-  position: relative;
-  padding: 0.4rem 0.2rem;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
   color: var(--market-dim);
   font-size: var(--market-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.04em;
   white-space: nowrap;
-  transition: color var(--market-transition-fast);
 }
 
 .market-nav a:hover {
-  color: var(--market-fg);
+  color: var(--market-accent);
   text-decoration: none;
 }
 
 .market-nav a[aria-current='page'] {
-  color: var(--market-accent-light);
-}
-
-.market-nav a[aria-current='page']::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--market-accent);
-  border-radius: 2px;
-  box-shadow: 0 0 8px var(--market-accent-glow);
+  border-bottom-color: var(--market-accent);
+  color: var(--market-fg);
 }
 
 .market-header-side {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   margin-left: auto;
 }
 
 .market-partner-link {
-  padding: 0.3rem 0.65rem;
-  border: 1px solid var(--market-border);
-  border-radius: var(--market-radius-sm);
-  background: var(--market-surface-glass);
   color: var(--market-dim);
   font-size: var(--market-text-xs);
+  opacity: 0.85;
   white-space: nowrap;
-  transition: all var(--market-transition-fast);
 }
 
 .market-partner-link:hover {
-  border-color: var(--market-accent);
-  color: var(--market-accent-light);
+  color: var(--market-accent);
   text-decoration: none;
-  box-shadow: 0 0 12px var(--market-accent-glow);
 }
 
 .market-language {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.2rem 0.4rem;
-  border: 1px solid var(--market-border);
-  border-radius: var(--market-radius-full);
-  background: var(--market-surface-glass);
+  gap: 0.15rem;
+  padding: 0.2rem 0.45rem;
+  border: var(--market-rule);
+  border-radius: var(--market-radius);
 }
 
 .market-language button {
-  padding: 0.15rem 0.45rem;
+  padding: 0;
   border: 0;
-  border-radius: var(--market-radius-full);
   background: transparent;
   color: var(--market-dim);
   cursor: pointer;
   font-family: var(--market-font-mono);
-  font-size: var(--market-text-2xs);
-  font-weight: 600;
-  transition: all var(--market-transition-fast);
+  font-size: var(--market-text-xs);
 }
 
 .market-language button[aria-pressed='true'] {
-  color: #000;
-  background: var(--market-accent);
+  color: var(--market-accent);
 }
 
 .market-language-separator {
-  color: var(--market-border-strong);
-  font-size: 0.7rem;
+  color: var(--market-border);
 }
 
 .market-main {

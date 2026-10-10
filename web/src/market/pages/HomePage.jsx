@@ -15,10 +15,10 @@ const ASCII_WORDMARK = String.raw` ____  _____   __  __    _    ____  _  _______
 |____/|_|     |_|  |_/_/   \_\_| \_\_|\_\_____|_|`;
 
 const FLOW_STEPS = [
-  ['01', 'flowDiscoverTitle', 'flowDiscoverText', 'flowDiscoverCode', '🔍'],
-  ['02', 'flowQuoteTitle', 'flowQuoteText', 'flowQuoteCode', '📋'],
-  ['03', 'flowSignTitle', 'flowSignText', 'flowSignCode', '✍️'],
-  ['04', 'flowSettleTitle', 'flowSettleText', 'flowSettleCode', '⚡'],
+  ['01', 'flowDiscoverTitle', 'flowDiscoverText', 'flowDiscoverCode'],
+  ['02', 'flowQuoteTitle', 'flowQuoteText', 'flowQuoteCode'],
+  ['03', 'flowSignTitle', 'flowSignText', 'flowSignCode'],
+  ['04', 'flowSettleTitle', 'flowSettleText', 'flowSettleCode'],
 ];
 
 function useLiveStats() {
@@ -94,29 +94,15 @@ function PromptBox() {
   return (
     <div className='home-prompt-block'>
       <div className='home-prompt'>
-        <div className='home-prompt-header'>
-          <span className='home-prompt-label'>
-            <span className='prompt-pulse' aria-hidden='true' />
-            {t('promptLabel')}
-          </span>
-          <span className='home-prompt-hint-inline'>
-            {t('promptHint')}
-          </span>
-        </div>
-        <div className='home-prompt-body'>
-          <code className='home-prompt-text'>{prompt}</code>
-          <button
-            className={`home-copy-button ${copied ? 'is-copied' : ''}`}
-            type='button'
-            onClick={copyPrompt}
-          >
-            <span aria-hidden='true'>{copied ? '✓' : '⧉'}</span>
-            <span>{copied ? t('copied') : t('copyPrompt')}</span>
-          </button>
-        </div>
+        <span className='home-prompt-label'>[ {t('promptLabel')} ]</span>
+        <code className='home-prompt-text'>{prompt}</code>
+        <button className='home-copy-button' type='button' onClick={copyPrompt}>
+          <span aria-hidden='true'>▢</span>
+          {copied ? t('copied') : t('copyPrompt')}
+        </button>
       </div>
       <p className='home-prompt-feedback' aria-live='polite'>
-        {copied ? t('copiedFeedback') : copyFailed ? t('copyFailed') : null}
+        {copied ? t('copiedFeedback') : copyFailed ? t('copyFailed') : t('promptHint')}
       </p>
     </div>
   );
@@ -126,43 +112,33 @@ function LiveStats() {
   const { t, token } = useT();
   const { stats, failed, errorText } = useLiveStats();
   const settledAmount =
-    stats?.settledUsdt == null ? '--' : formatAtomicUsdt(stats.settledUsdt) ?? '--';
+    stats?.settledUsdt == null ? '—' : formatAtomicUsdt(stats.settledUsdt) ?? '—';
   const values = [
-    { label: 'statsCalls', value: stats?.calls ?? '--', icon: '📊' },
-    { label: 'statsSettled', value: settledAmount, icon: '💎', isSettled: true },
-    { label: 'statsPayers', value: stats?.payers ?? '--', icon: '👛' },
-    { label: 'statsAgents', value: stats?.agents ?? '--', icon: '🤖' },
+    ['statsCalls', stats?.calls ?? '—'],
+    ['statsSettled', settledAmount],
+    ['statsPayers', stats?.payers ?? '—'],
+    ['statsAgents', stats?.agents ?? '—'],
   ];
 
   return (
     <section className='home-section home-stats-section' aria-labelledby='home-stats-title'>
-      <div className='home-section-header'>
-        <h2 className='home-section-title' id='home-stats-title'>
-          <span className='title-dot' aria-hidden='true' />
-          {t('statsTitle')}
-        </h2>
-        <span className='home-stats-live-badge'>
-          <span className='live-pulse-dot' aria-hidden='true' />
-          NETWORK VERIFIED
-        </span>
-      </div>
+      <h2 className='home-section-title' id='home-stats-title'>
+        {t('statsTitle')}
+      </h2>
       {failed && <p className='home-inline-error'>{errorText}</p>}
-      <div className='home-stats'>
-        {values.map(({ label, value, icon, isSettled }) => (
+      <dl className='home-stats'>
+        {values.map(([label, value]) => (
           <div className='home-stat' key={label}>
-            <div className='home-stat-top'>
-              <span className='home-stat-label'>{t(label)}</span>
-              <span className='home-stat-icon' aria-hidden='true'>{icon}</span>
-            </div>
-            <div className='home-stat-val market-mono'>
+            <dt>{t(label)}</dt>
+            <dd className='market-mono'>
               {value}
-              {isSettled && value !== '--' && (
+              {label === 'statsSettled' && value !== '—' && (
                 <span className='home-stat-unit'> {token}</span>
               )}
-            </div>
+            </dd>
           </div>
         ))}
-      </div>
+      </dl>
       <p className='home-stats-note'>{t('statsNote')}</p>
     </section>
   );
@@ -171,27 +147,21 @@ function LiveStats() {
 function Flow() {
   const { t } = useT();
   return (
-    <section className='home-section home-flow-section' aria-labelledby='home-flow-title'>
-      <div className='home-section-header'>
-        <h2 className='home-section-title' id='home-flow-title'>
-          <span className='title-dot' aria-hidden='true' />
-          {t('flowTitle')}
-        </h2>
-      </div>
+    <section className='home-section' aria-labelledby='home-flow-title'>
+      <h2 className='home-section-title' id='home-flow-title'>
+        {t('flowTitle')}
+      </h2>
       <p className='home-section-intro market-prose'>{t('flowIntro')}</p>
-      <div className='home-flow'>
-        {FLOW_STEPS.map(([number, titleKey, textKey, codeKey, icon]) => (
-          <div className='home-flow-step' key={number}>
-            <div className='home-flow-step-header'>
-              <span className='home-flow-number'>{number}</span>
-              <span className='home-flow-step-icon' aria-hidden='true'>{icon}</span>
-            </div>
+      <ol className='home-flow'>
+        {FLOW_STEPS.map(([number, titleKey, textKey, codeKey]) => (
+          <li className='home-flow-step' key={number}>
+            <span className='home-flow-number'>{number}</span>
             <h3>{t(titleKey)}</h3>
             <p className='market-prose'>{t(textKey)}</p>
             <code className='home-flow-code'>{t(codeKey)}</code>
-          </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
   );
 }
@@ -200,32 +170,21 @@ function StartLinks() {
   const { t } = useT();
   return (
     <section className='home-section home-start-section' aria-labelledby='home-start-title'>
-      <div className='home-section-header'>
-        <h2 className='home-section-title' id='home-start-title'>
-          <span className='title-dot' aria-hidden='true' />
-          {t('startTitle')}
-        </h2>
-      </div>
+      <h2 className='home-section-title' id='home-start-title'>
+        {t('startTitle')}
+      </h2>
       <div className='home-start-grid'>
         <Link className='home-start-card' to='/market'>
-          <div className='home-start-card-glow' aria-hidden='true' />
           <span className='home-start-eyebrow'>{t('marketEntryEyebrow')}</span>
           <span className='home-start-title'>{t('marketEntryTitle')}</span>
           <span className='home-start-copy market-prose'>{t('marketEntryText')}</span>
-          <span className='home-start-link'>
-            <span>{t('market')} · {t('marketEntryMeta')}</span>
-            <span className='home-arrow-icon' aria-hidden='true'>→</span>
-          </span>
+          <span className='home-start-link'>→ {t('market')} · {t('marketEntryMeta')}</span>
         </Link>
         <Link className='home-start-card' to='/wallet'>
-          <div className='home-start-card-glow' aria-hidden='true' />
           <span className='home-start-eyebrow'>{t('consoleEntryEyebrow')}</span>
           <span className='home-start-title'>{t('consoleEntryTitle')}</span>
           <span className='home-start-copy market-prose'>{t('consoleEntryText')}</span>
-          <span className='home-start-link'>
-            <span>{t('console')} · {t('consoleEntryMeta')}</span>
-            <span className='home-arrow-icon' aria-hidden='true'>→</span>
-          </span>
+          <span className='home-start-link'>→ {t('console')} · {t('consoleEntryMeta')}</span>
         </Link>
       </div>
     </section>
@@ -237,11 +196,6 @@ export default function HomePage() {
   return (
     <main className='market-container home-page'>
       <section className='home-hero' aria-labelledby='home-tagline'>
-        <div className='home-hero-glow' aria-hidden='true' />
-        <div className='home-live-badge'>
-          <span className='live-badge-dot' aria-hidden='true' />
-          <span>MULTI-CHAIN EVM &amp; BSC LIVE · AGENT SETTLEMENT PROTOCOL</span>
-        </div>
         <pre className='market-ascii' aria-hidden='true'>
           {ASCII_WORDMARK}
         </pre>
